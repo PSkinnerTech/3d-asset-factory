@@ -174,9 +174,52 @@ def test_qa_recovery_resyncs_existing_export_package(tmp_path: Path):
     web_qa_report = read_json(run_dir / "exports" / "web" / "qa.json")
 
     assert root_manifest["qa"]["passed"] is True
+    assert root_manifest["files"]["exports"] == {
+        "web": str(run_dir / "exports" / "web"),
+    }
     assert root_qa_report["passed"] is True
     assert web_manifest["qa"]["passed"] is True
+    assert web_manifest["files"]["exports"] == {
+        "web": str(run_dir / "exports" / "web"),
+    }
     assert web_qa_report["passed"] is True
+
+
+def test_nested_manifest_export_path_is_not_synced_or_advertised(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+    nested_dir = run_dir / "exports" / "stale" / "unity"
+    nested_dir.mkdir(parents=True)
+    for package_file in (
+        "asset.glb",
+        "thumbnail.png",
+        "turntable.webm",
+        "qa.json",
+        "IMPORT_NOTES.md",
+    ):
+        (nested_dir / package_file).write_text("stale nested export\n", encoding="utf-8")
+    marker_manifest = {"marker": "do not overwrite"}
+    (nested_dir / "manifest.json").write_text(
+        json.dumps(marker_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    root_manifest_path = run_dir / "manifest.json"
+    root_manifest = read_json(root_manifest_path)
+    root_manifest["files"]["exports"]["unity"] = str(nested_dir)
+    root_manifest_path.write_text(
+        json.dumps(root_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    qa_result = runner.invoke(app, ["qa", str(run_dir)])
+
+    assert qa_result.exit_code == 0, qa_result.output
+    assert "QA passed: True" in qa_result.output
+    root_manifest = read_json(run_dir / "manifest.json")
+    assert root_manifest["files"]["exports"] == {
+        "web": str(run_dir / "exports" / "web"),
+    }
+    assert read_json(nested_dir / "manifest.json") == marker_manifest
 
 
 def test_qa_does_not_sync_export_paths_outside_exports_root(tmp_path: Path):

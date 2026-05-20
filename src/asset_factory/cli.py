@@ -106,6 +106,8 @@ def qa(run_dir: Path) -> None:
     manifest.qa = summary
     if not summary.passed:
         manifest.files.exports = {}
+    else:
+        manifest.files.exports = _exports_from_package_dirs(complete_export_dirs)
     write_manifest(manifest_path, manifest)
 
     qa_report = run_dir / "reports" / "qa.json"
@@ -250,10 +252,10 @@ def _is_complete_export_package(export_dir: Path) -> bool:
 
 
 def _is_export_package_dir(path: Path, exports_root: Path) -> bool:
-    if path == exports_root:
+    if path.parent != exports_root:
         return False
     try:
-        path.relative_to(exports_root)
+        ExportProfile(path.name)
     except ValueError:
         return False
     return True
