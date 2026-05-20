@@ -21,7 +21,14 @@ def make_spec(max_triangles: int = 1000, max_glb_mb: int = 10) -> AssetSpec:
 
 def write_box(path: Path) -> None:
     mesh = trimesh.creation.box(extents=(1, 1, 1))
-    mesh.visual = trimesh.visual.ColorVisuals(mesh, vertex_colors=[200, 120, 80, 255])
+    material = trimesh.visual.material.PBRMaterial(baseColorFactor=[0.78, 0.47, 0.31, 1.0])
+    mesh.visual = trimesh.visual.TextureVisuals(material=material)
+    mesh.export(path)
+
+
+def write_box_without_material(path: Path) -> None:
+    mesh = trimesh.creation.box(extents=(1, 1, 1))
+    mesh.visual = None
     mesh.export(path)
 
 
@@ -53,3 +60,16 @@ def test_qa_blocks_triangle_budget(tmp_path: Path):
 
     assert report.passed is False
     assert "Triangle count 12 exceeds max_triangles 1" in report.blocking_failures
+
+
+def test_qa_blocks_missing_material_and_base_color(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_without_material(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["triangles"] == 12
+    assert report.metrics["file_size_bytes"] > 0

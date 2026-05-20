@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import trimesh
+from pygltflib import GLTF2
 
 
 @dataclass(frozen=True)
@@ -27,15 +28,21 @@ def inspect_glb(path: Path) -> GlbMetrics:
     for geometry in geometries:
         faces = getattr(geometry, "faces", [])
         triangles += len(faces)
-        visual = getattr(geometry, "visual", None)
-        material = getattr(visual, "material", None)
-        if material is not None:
+
+    gltf = GLTF2.load(path)
+    materials = gltf.materials or []
+    for mesh in gltf.meshes or []:
+        for primitive in mesh.primitives or []:
+            material_index = primitive.material
+            if material_index is None or material_index >= len(materials):
+                continue
+
             has_material = True
-            has_base_color = True
-        vertex_colors = getattr(visual, "vertex_colors", None)
-        if vertex_colors is not None and len(vertex_colors) > 0:
-            has_material = True
-            has_base_color = True
+            pbr = materials[material_index].pbrMetallicRoughness
+            if pbr is not None and (
+                pbr.baseColorFactor is not None or pbr.baseColorTexture is not None
+            ):
+                has_base_color = True
 
     return GlbMetrics(
         triangles=triangles,
