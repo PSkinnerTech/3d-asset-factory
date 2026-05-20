@@ -46,6 +46,7 @@ def create_run_layout(
         reports_dir=run_dir / "reports",
         manifest_path=run_dir / "manifest.json",
     )
+    layout.run_dir.mkdir(parents=True, exist_ok=False)
     for directory in (
         layout.input_dir,
         layout.image_dir,
@@ -55,7 +56,7 @@ def create_run_layout(
         layout.exports_dir,
         layout.reports_dir,
     ):
-        directory.mkdir(parents=True, exist_ok=False)
+        directory.mkdir(exist_ok=False)
     if spec.source_path and spec.source_path.exists():
         shutil.copy2(spec.source_path, layout.input_dir / "asset.yaml")
     return layout

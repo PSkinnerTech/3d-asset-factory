@@ -64,6 +64,8 @@ class AssetSpec(BaseModel):
 
 
 class AssetIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     object: str
     subject: ScienceSubject
@@ -72,6 +74,8 @@ class AssetIdentity(BaseModel):
 
 
 class EducationMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     grade_band: str
     learning_goal: str
     style: StyleMode
@@ -79,6 +83,8 @@ class EducationMetadata(BaseModel):
 
 
 class Provenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source_spec: str | None = None
     image_prompt: str | None = None
     openai_model: str | None = None
@@ -88,6 +94,8 @@ class Provenance(BaseModel):
 
 
 class FileManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     manifest: str = "manifest.json"
     concept_image: str | None = None
     raw_glb: str | None = None
@@ -100,6 +108,8 @@ class FileManifest(BaseModel):
 
 
 class RuntimeHints(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     scale: float = 1.0
     orientation: str = "y-up"
     canonical_cameras: list[str] = Field(default_factory=lambda: ["front", "three_quarter", "top"])
@@ -109,6 +119,8 @@ class RuntimeHints(BaseModel):
 
 
 class QaSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     passed: bool = False
     blocking_failures: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -116,6 +128,8 @@ class QaSummary(BaseModel):
 
 
 class ReviewInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     state: ReviewState = ReviewState.GENERATED
     notes: str = ""
     reviewer: str = ""
@@ -123,6 +137,8 @@ class ReviewInfo(BaseModel):
 
 
 class AssetManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     asset: AssetIdentity
     education: EducationMetadata
     provenance: Provenance
