@@ -1,7 +1,8 @@
 [project]
 name = "asset-factory"
 version = "0.1.0"
-description = "CLI-first educational 3D asset factory for EdTech engineers"
+description = "CLI-first pipeline for generating, checking, reviewing, and packaging 3D assets"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
   "typer>=0.12.5",
