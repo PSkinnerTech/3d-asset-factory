@@ -21,6 +21,15 @@ from asset_factory.specs import load_asset_spec
 
 app = typer.Typer(help="Generate educational 3D asset bundles from science specs.")
 
+_REQUIRED_EXPORT_PACKAGE_FILES = (
+    "asset.glb",
+    "thumbnail.png",
+    "turntable.webm",
+    "qa.json",
+    "manifest.json",
+    "IMPORT_NOTES.md",
+)
+
 
 @dataclass(frozen=True)
 class _GeneratedConceptImage:
@@ -200,8 +209,17 @@ def _exports_from_package_dirs(export_dirs: Iterable[Path]) -> dict[ExportProfil
             profile = ExportProfile(export_dir.name)
         except ValueError:
             continue
+        if not _is_complete_export_package(export_dir):
+            continue
         exports[profile] = str(export_dir)
     return exports
+
+
+def _is_complete_export_package(export_dir: Path) -> bool:
+    return all(
+        (export_dir / required_file).is_file()
+        for required_file in _REQUIRED_EXPORT_PACKAGE_FILES
+    )
 
 
 def _is_export_package_dir(path: Path, exports_root: Path) -> bool:
