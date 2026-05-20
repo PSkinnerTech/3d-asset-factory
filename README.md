@@ -227,6 +227,19 @@ python -m asset_factory export runs/chloroplast_001/<timestamp> --profile web
 python -m asset_factory review runs/chloroplast_001/<timestamp>
 ```
 
+## Docs
+
+In-depth guides for running TRELLIS.2 in the cloud while a MacBook stays the controller:
+
+- [Modal](docs/modal-cloud-inference.md) — Python-decorator deploys, snapshotted starts.
+- [RunPod Serverless](docs/runpod-serverless-inference.md) — Docker-native, broad GPU
+  selection, HTTP-only client.
+- [Replicate](docs/replicate-cloud-inference.md) — fully managed model endpoint, lightest
+  laptop-side integration.
+
+Each guide wires its provider into the existing `TRELLIS2_COMMAND` seam, so the rest of the
+pipeline (OpenAI concept image, optimize, QA, review, export, manifest) stays unchanged.
+
 ## License
 
 MIT © 2026 PSkinnerTech.
