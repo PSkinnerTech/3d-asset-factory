@@ -14,6 +14,8 @@ from pygltflib import GLTF2
 _GLB_HEADER_LENGTH = 12
 _GLB_CHUNK_HEADER_LENGTH = 8
 _JSON_CHUNK_TYPE = 0x4E4F534A
+_COLOR_ACCESSOR_TYPES = {"VEC3", "VEC4"}
+_COLOR_COMPONENT_TYPES = {5120, 5121, 5122, 5123, 5126}
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,10 @@ def _has_positive_byte_length(buffer_view: Any) -> bool:
     return isinstance(byte_length, int) and not isinstance(byte_length, bool) and byte_length > 0
 
 
+def _positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def _has_usable_image_data(image: Any, glb_json: dict[str, Any], glb_parent: Path) -> bool:
     if not isinstance(image, dict):
         return False
@@ -181,14 +187,32 @@ def _has_vertex_color_attribute(attributes: Any, glb_json: dict[str, Any]) -> bo
         return False
 
     count = color_accessor.get("count")
-    if not (isinstance(count, int) and not isinstance(count, bool) and count > 0):
+    if not _positive_int(count):
+        return False
+
+    if color_accessor.get("type") not in _COLOR_ACCESSOR_TYPES:
+        return False
+
+    if color_accessor.get("componentType") not in _COLOR_COMPONENT_TYPES:
         return False
 
     buffer_views = glb_json.get("bufferViews")
     buffer_view_index = color_accessor.get("bufferView")
-    return _is_valid_index(buffer_view_index, buffer_views) and _has_positive_byte_length(
-        buffer_views[buffer_view_index]
-    )
+    if not (
+        _is_valid_index(buffer_view_index, buffer_views)
+        and _has_positive_byte_length(buffer_views[buffer_view_index])
+    ):
+        return False
+
+    position_accessor_index = getattr(attributes, "POSITION", None)
+    if _is_valid_index(position_accessor_index, accessors):
+        position_accessor = accessors[position_accessor_index]
+        if isinstance(position_accessor, dict):
+            position_count = position_accessor.get("count")
+            if _positive_int(position_count) and count != position_count:
+                return False
+
+    return True
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
