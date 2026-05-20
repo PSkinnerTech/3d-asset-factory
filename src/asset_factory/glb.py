@@ -14,6 +14,9 @@ class GlbMetrics:
     has_geometry: bool
     has_material: bool
     has_base_color: bool
+    primitive_count: int
+    primitives_missing_material: int
+    primitives_missing_base_color: int
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
@@ -23,26 +26,40 @@ def inspect_glb(path: Path) -> GlbMetrics:
         geometries = [loaded]
 
     triangles = 0
-    has_material = False
-    has_base_color = False
     for geometry in geometries:
         faces = getattr(geometry, "faces", [])
         triangles += len(faces)
 
     gltf = GLTF2.load(path)
     materials = gltf.materials or []
+    primitive_count = 0
+    primitives_missing_material = 0
+    primitives_missing_base_color = 0
     for mesh in gltf.meshes or []:
         for primitive in mesh.primitives or []:
-            material_index = primitive.material
-            if material_index is None or material_index >= len(materials):
+            attributes = primitive.attributes
+            if attributes is None or getattr(attributes, "POSITION", None) is None:
                 continue
 
-            has_material = True
-            pbr = materials[material_index].pbrMetallicRoughness
-            if pbr is not None and (
-                pbr.baseColorFactor is not None or pbr.baseColorTexture is not None
+            primitive_count += 1
+            material_index = primitive.material
+            if (
+                material_index is None
+                or material_index < 0
+                or material_index >= len(materials)
             ):
-                has_base_color = True
+                primitives_missing_material += 1
+                primitives_missing_base_color += 1
+                continue
+
+            pbr = materials[material_index].pbrMetallicRoughness
+            if pbr is None or (
+                pbr.baseColorFactor is None and pbr.baseColorTexture is None
+            ):
+                primitives_missing_base_color += 1
+
+    has_material = primitive_count > 0 and primitives_missing_material == 0
+    has_base_color = primitive_count > 0 and primitives_missing_base_color == 0
 
     return GlbMetrics(
         triangles=triangles,
@@ -50,4 +67,7 @@ def inspect_glb(path: Path) -> GlbMetrics:
         has_geometry=triangles > 0,
         has_material=has_material,
         has_base_color=has_base_color,
+        primitive_count=primitive_count,
+        primitives_missing_material=primitives_missing_material,
+        primitives_missing_base_color=primitives_missing_base_color,
     )

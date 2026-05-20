@@ -36,6 +36,9 @@ def run_qa(spec: AssetSpec, glb_path: Path) -> QaSummary:
             "has_geometry": glb_metrics.has_geometry,
             "has_material": glb_metrics.has_material,
             "has_base_color": glb_metrics.has_base_color,
+            "primitive_count": glb_metrics.primitive_count,
+            "primitives_missing_material": glb_metrics.primitives_missing_material,
+            "primitives_missing_base_color": glb_metrics.primitives_missing_base_color,
         }
     )
 
@@ -54,7 +57,7 @@ def run_qa(spec: AssetSpec, glb_path: Path) -> QaSummary:
         failures.append(
             f"GLB size {glb_metrics.file_size_bytes} bytes exceeds max_glb_mb {spec.qa.max_glb_mb}"
         )
-    if glb_metrics.triangles < 50:
+    if glb_metrics.has_geometry and glb_metrics.triangles < 50:
         warnings.append("Asset has very low triangle count; visual quality needs review")
 
     return QaSummary(
