@@ -13,6 +13,7 @@ from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaSumm
 from asset_factory.optimize import OptimizedAsset, optimize_asset
 from asset_factory.prompts import build_image_prompt
 from asset_factory.qa import run_qa
+from asset_factory.review import write_review_html
 from asset_factory.runners.base import AssetRunner, RunnerRequest, RunnerResult
 from asset_factory.runs import RunLayout, create_run_layout
 
@@ -77,6 +78,15 @@ def generate_asset(
         json.dumps(qa_summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    review_html = write_review_html(
+        layout.run_dir,
+        asset_id=spec.id,
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=qa_summary.passed,
+        warnings=qa_summary.warnings,
+    )
 
     manifest = _apply_outputs(
         manifest=manifest,
@@ -84,6 +94,7 @@ def generate_asset(
         runner_result=runner_result,
         optimized=optimized,
         qa_report=qa_report,
+        review_html=review_html,
         qa_summary=qa_summary,
         exports={},
     )
@@ -97,6 +108,7 @@ def generate_asset(
         runner_result=runner_result,
         optimized=optimized,
         qa_report=qa_report,
+        review_html=review_html,
         qa_summary=qa_summary,
         exports=exports,
     )
@@ -112,6 +124,7 @@ def _apply_outputs(
     runner_result: RunnerResult,
     optimized: OptimizedAsset,
     qa_report: Path,
+    review_html: Path,
     qa_summary: QaSummary,
     exports: dict[ExportProfile, Path],
 ) -> AssetManifest:
@@ -127,7 +140,7 @@ def _apply_outputs(
         thumbnail=optimized.thumbnail,
         turntable=optimized.turntable,
         qa_report=qa_report,
-        review_html=None,
+        review_html=review_html,
         exports=exports,
         qa_summary=qa_summary,
     )
