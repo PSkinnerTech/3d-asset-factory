@@ -11,7 +11,7 @@ Click the GIF to open the original X post.
 
 3D Asset Factory turns a structured asset spec into a reproducible run directory:
 
-- Generates a concept image prompt and concept image.
+- Generates a concept image with OpenAI GPT Image 2.0.
 - Runs a 3D generator through a runner interface.
 - Optimizes the resulting GLB.
 - Runs deterministic QA checks.
@@ -22,17 +22,14 @@ Click the GIF to open the original X post.
 ```mermaid
 flowchart LR
     A["YAML asset spec"] --> B["Image prompt"]
-    B --> C["Concept image"]
-    C --> D{"Runner"}
-    D -->|mock| E["Mock GLB"]
-    D -->|TRELLIS.2| F["raw.glb"]
-    E --> G["Optimize + previews"]
-    F --> G
-    G --> H["QA gate"]
-    H --> I["Review HTML"]
-    H --> J["Export packages"]
-    J --> K["web / unity / unreal"]
-    H --> L["manifest.json"]
+    B --> C["OpenAI GPT Image 2.0 concept"]
+    C --> D["TRELLIS.2 raw.glb"]
+    D --> E["Optimize + previews"]
+    E --> F["QA gate"]
+    F --> G["Review HTML"]
+    F --> H["Export packages"]
+    H --> I["web / unity / unreal"]
+    F --> J["manifest.json"]
 ```
 
 The mock runner works on a laptop and is useful for validating the pipeline. Real TRELLIS.2
@@ -116,6 +113,12 @@ Export packages contain package-local manifests, so `exports/web/manifest.json` 
 `asset.glb`, `thumbnail.png`, `turntable.webm`, and `qa.json` inside that package.
 
 ## TRELLIS.2 Inference
+
+The production path is:
+
+```text
+Spec -> OpenAI GPT Image 2.0 -> TRELLIS.2 -> 3D Asset
+```
 
 The pipeline talks to real TRELLIS.2 through `TRELLIS2_COMMAND`.
 
