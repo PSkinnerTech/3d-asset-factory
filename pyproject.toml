@@ -1,0 +1,41 @@
+[project]
+name = "asset-factory"
+version = "0.1.0"
+description = "CLI-first educational 3D asset factory for EdTech engineers"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12.5",
+  "pydantic>=2.8.2",
+  "pyyaml>=6.0.2",
+  "openai>=1.99.0",
+  "pillow>=10.4.0",
+  "imageio>=2.35.1",
+  "imageio-ffmpeg>=0.5.1",
+  "trimesh>=4.4.9",
+  "pygltflib>=1.16.2",
+  "numpy>=2.0.1"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.2",
+  "ruff>=0.6.4"
+]
+
+[project.scripts]
+asset-factory = "asset_factory.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
