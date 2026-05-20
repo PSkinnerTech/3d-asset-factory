@@ -42,7 +42,7 @@ class QaThresholds(BaseModel):
 
 
 class AssetSpec(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     id: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     subject: ScienceSubject
