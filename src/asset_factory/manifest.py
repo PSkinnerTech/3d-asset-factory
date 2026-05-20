@@ -9,8 +9,12 @@ from asset_factory.models import (
     AssetManifest,
     AssetSpec,
     EducationMetadata,
+    ExportProfile,
     FileManifest,
     Provenance,
+    QaSummary,
+    ReviewInfo,
+    ReviewState,
 )
 from asset_factory.runs import RunLayout
 
@@ -51,3 +55,54 @@ def write_manifest(path: Path, manifest: AssetManifest) -> None:
 
 def read_manifest(path: Path) -> AssetManifest:
     return AssetManifest.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def set_review_state(
+    path: Path,
+    state: ReviewState,
+    notes: str = "",
+    reviewer: str = "",
+    reviewed_at: datetime | None = None,
+) -> AssetManifest:
+    manifest = read_manifest(path)
+    manifest.review = ReviewInfo(
+        state=state,
+        notes=notes,
+        reviewer=reviewer,
+        reviewed_at=reviewed_at,
+    )
+    write_manifest(path, manifest)
+    return manifest
+
+
+def apply_pipeline_outputs(
+    manifest: AssetManifest,
+    *,
+    prompt_path: Path,
+    concept_image: Path,
+    image_model: str,
+    raw_glb: Path,
+    runner_type: str,
+    runner_version: str,
+    optimized_glb: Path,
+    thumbnail: Path,
+    turntable: Path,
+    qa_report: Path,
+    review_html: Path | None,
+    exports: dict[ExportProfile, Path],
+    qa_summary: QaSummary,
+) -> AssetManifest:
+    manifest.provenance.image_prompt = str(prompt_path)
+    manifest.provenance.openai_model = image_model
+    manifest.provenance.runner_type = runner_type
+    manifest.provenance.runner_version = runner_version
+    manifest.files.concept_image = str(concept_image)
+    manifest.files.raw_glb = str(raw_glb)
+    manifest.files.optimized_glb = str(optimized_glb)
+    manifest.files.thumbnail = str(thumbnail)
+    manifest.files.turntable = str(turntable)
+    manifest.files.qa_report = str(qa_report)
+    manifest.files.review_html = str(review_html) if review_html else None
+    manifest.files.exports = {profile: str(path) for profile, path in exports.items()}
+    manifest.qa = qa_summary
+    return manifest
