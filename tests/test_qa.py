@@ -40,6 +40,15 @@ def write_box_without_material(path: Path) -> None:
     mesh.export(path)
 
 
+def write_vertex_colored_box(path: Path) -> None:
+    mesh = trimesh.creation.box(extents=(1, 1, 1))
+    mesh.visual = trimesh.visual.ColorVisuals(
+        mesh=mesh,
+        vertex_colors=[[199, 120, 79, 255]] * len(mesh.vertices),
+    )
+    mesh.export(path)
+
+
 def write_mixed_material_scene(path: Path) -> None:
     materialized = trimesh.creation.box(extents=(1, 1, 1))
     material = trimesh.visual.material.PBRMaterial(baseColorFactor=[0.78, 0.47, 0.31, 1.0])
@@ -130,6 +139,7 @@ def write_box_with_valid_factor_and_invalid_base_color_texture_index(path: Path)
 
 def write_box_with_valid_texture_and_base_color_factor(path: Path, factor: object) -> None:
     write_box(path)
+    (path.parent / "texture.png").write_bytes(b"png")
 
     def mutate(glb_json: dict) -> None:
         pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
@@ -137,6 +147,19 @@ def write_box_with_valid_texture_and_base_color_factor(path: Path, factor: objec
         pbr["baseColorTexture"] = {"index": 0}
         glb_json["textures"] = [{"source": 0}]
         glb_json["images"] = [{"uri": "texture.png"}]
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_base_color_texture_uri(path: Path, uri: str) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr.pop("baseColorFactor", None)
+        pbr["baseColorTexture"] = {"index": 0}
+        glb_json["textures"] = [{"source": 0}]
+        glb_json["images"] = [{"uri": uri}]
 
     mutate_glb_json(path, mutate)
 
@@ -213,6 +236,20 @@ def test_qa_passes_valid_glb(tmp_path: Path):
     assert report.metrics["primitives_missing_material"] == 0
     assert report.metrics["primitives_missing_base_color"] == 0
     assert report.metrics["file_size_bytes"] > 0
+
+
+def test_qa_passes_vertex_colored_glb(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_vertex_colored_box(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is True
+    assert report.blocking_failures == []
+    assert report.metrics["triangles"] == 12
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 0
 
 
 def test_qa_blocks_missing_glb(tmp_path: Path):
@@ -387,6 +424,34 @@ def test_qa_blocks_empty_base_color_texture_image(tmp_path: Path):
     assert report.metrics["primitive_count"] == 1
     assert report.metrics["primitives_missing_material"] == 0
     assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_missing_external_base_color_texture_uri(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_base_color_texture_uri(glb_path, "missing-texture.png")
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_passes_external_base_color_texture_uri_with_sibling_file(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    (tmp_path / "texture.png").write_bytes(b"png")
+    write_box_with_base_color_texture_uri(glb_path, "texture.png")
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is True
+    assert report.blocking_failures == []
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 0
 
 
 def test_qa_blocks_empty_base_color_texture_data_uri(tmp_path: Path):

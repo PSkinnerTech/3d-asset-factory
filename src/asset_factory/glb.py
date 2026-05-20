@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from numbers import Real
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import trimesh
 from pygltflib import GLTF2
@@ -75,7 +76,7 @@ def _has_valid_base_color_factor(pbr: dict[str, Any]) -> bool:
     )
 
 
-def _has_usable_image_uri(uri: Any) -> bool:
+def _has_usable_image_uri(uri: Any, glb_parent: Path) -> bool:
     if not isinstance(uri, str):
         return False
 
@@ -87,7 +88,16 @@ def _has_usable_image_uri(uri: Any) -> bool:
         _header, separator, payload = uri.partition(",")
         return bool(separator and payload.strip())
 
-    return True
+    parsed = urlparse(uri)
+    if parsed.scheme and parsed.scheme != "file":
+        return False
+
+    uri_path = unquote(parsed.path if parsed.scheme == "file" else uri)
+    image_path = Path(uri_path)
+    if not image_path.is_absolute():
+        image_path = glb_parent / image_path
+
+    return image_path.is_file()
 
 
 def _has_positive_byte_length(buffer_view: Any) -> bool:
@@ -98,11 +108,11 @@ def _has_positive_byte_length(buffer_view: Any) -> bool:
     return isinstance(byte_length, int) and not isinstance(byte_length, bool) and byte_length > 0
 
 
-def _has_usable_image_data(image: Any, glb_json: dict[str, Any]) -> bool:
+def _has_usable_image_data(image: Any, glb_json: dict[str, Any], glb_parent: Path) -> bool:
     if not isinstance(image, dict):
         return False
 
-    if _has_usable_image_uri(image.get("uri")):
+    if _has_usable_image_uri(image.get("uri"), glb_parent):
         return True
 
     mime_type = image.get("mimeType")
@@ -116,7 +126,9 @@ def _has_usable_image_data(image: Any, glb_json: dict[str, Any]) -> bool:
     )
 
 
-def _has_valid_base_color_texture(pbr: dict[str, Any], glb_json: dict[str, Any]) -> bool:
+def _has_valid_base_color_texture(
+    pbr: dict[str, Any], glb_json: dict[str, Any], glb_parent: Path
+) -> bool:
     texture_info = pbr.get("baseColorTexture")
     if not isinstance(texture_info, dict):
         return False
@@ -133,11 +145,11 @@ def _has_valid_base_color_texture(pbr: dict[str, Any], glb_json: dict[str, Any])
     images = glb_json.get("images")
     source_index = texture.get("source")
     return _is_valid_index(source_index, images) and _has_usable_image_data(
-        images[source_index], glb_json
+        images[source_index], glb_json, glb_parent
     )
 
 
-def _has_explicit_base_color(material: Any, glb_json: dict[str, Any]) -> bool:
+def _has_explicit_base_color(material: Any, glb_json: dict[str, Any], glb_parent: Path) -> bool:
     if not isinstance(material, dict):
         return False
 
@@ -152,10 +164,14 @@ def _has_explicit_base_color(material: Any, glb_json: dict[str, Any]) -> bool:
 
     if has_base_color_factor and not _has_valid_base_color_factor(pbr):
         return False
-    if has_base_color_texture and not _has_valid_base_color_texture(pbr, glb_json):
+    if has_base_color_texture and not _has_valid_base_color_texture(pbr, glb_json, glb_parent):
         return False
 
     return True
+
+
+def _has_vertex_color_attribute(attributes: Any) -> bool:
+    return getattr(attributes, "COLOR_0", None) is not None
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
@@ -183,12 +199,15 @@ def inspect_glb(path: Path) -> GlbMetrics:
 
             primitive_count += 1
             material_index = primitive.material
+            if material_index is None and _has_vertex_color_attribute(attributes):
+                continue
+
             if not _is_valid_index(material_index, materials):
                 primitives_missing_material += 1
                 primitives_missing_base_color += 1
                 continue
 
-            if not _has_explicit_base_color(materials[material_index], glb_json):
+            if not _has_explicit_base_color(materials[material_index], glb_json, path.parent):
                 primitives_missing_base_color += 1
 
     has_material = primitive_count > 0 and primitives_missing_material == 0
