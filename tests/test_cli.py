@@ -119,6 +119,25 @@ def test_export_does_not_advertise_incomplete_profile_dirs(tmp_path: Path):
     assert not (partial_export_dir / "asset.glb").exists()
 
 
+def test_export_does_not_complete_or_later_advertise_near_complete_profile_dirs(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+    partial_export_dir = run_dir / "exports" / "unreal"
+    partial_export_dir.mkdir()
+    for package_file in ("asset.glb", "thumbnail.png", "turntable.webm", "IMPORT_NOTES.md"):
+        (partial_export_dir / package_file).write_text("stale partial export\n", encoding="utf-8")
+
+    first_export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
+    second_export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
+
+    assert first_export_result.exit_code == 0, first_export_result.output
+    assert second_export_result.exit_code == 0, second_export_result.output
+    root_manifest = read_json(run_dir / "manifest.json")
+    assert set(root_manifest["files"]["exports"]) == {"web", "unity"}
+    assert "unreal" not in root_manifest["files"]["exports"]
+    assert not (partial_export_dir / "manifest.json").exists()
+    assert not (partial_export_dir / "qa.json").exists()
+
+
 def test_qa_failure_clears_advertised_exports(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
     set_copied_spec_max_triangles(run_dir, 1)
