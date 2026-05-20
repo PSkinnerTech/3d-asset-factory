@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -60,3 +61,72 @@ class AssetSpec(BaseModel):
         if not value:
             raise ValueError("asset spec must request at least one export")
         return value
+
+
+class AssetIdentity(BaseModel):
+    id: str
+    object: str
+    subject: ScienceSubject
+    version: str = "0.1.0"
+    run_timestamp: str
+
+
+class EducationMetadata(BaseModel):
+    grade_band: str
+    learning_goal: str
+    style: StyleMode
+    tags: list[str] = Field(default_factory=list)
+
+
+class Provenance(BaseModel):
+    source_spec: str | None = None
+    image_prompt: str | None = None
+    openai_model: str | None = None
+    runner_type: str | None = None
+    runner_version: str | None = None
+    created_at: datetime
+
+
+class FileManifest(BaseModel):
+    manifest: str = "manifest.json"
+    concept_image: str | None = None
+    raw_glb: str | None = None
+    optimized_glb: str | None = None
+    thumbnail: str | None = None
+    turntable: str | None = None
+    qa_report: str | None = None
+    review_html: str | None = None
+    exports: dict[ExportProfile, str] = Field(default_factory=dict)
+
+
+class RuntimeHints(BaseModel):
+    scale: float = 1.0
+    orientation: str = "y-up"
+    canonical_cameras: list[str] = Field(default_factory=lambda: ["front", "three_quarter", "top"])
+    suggested_labels: list[str] = Field(default_factory=list)
+    suggested_hotspots: list[str] = Field(default_factory=list)
+    interaction_notes: list[str] = Field(default_factory=list)
+
+
+class QaSummary(BaseModel):
+    passed: bool = False
+    blocking_failures: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    metrics: dict[str, int | float | str | bool] = Field(default_factory=dict)
+
+
+class ReviewInfo(BaseModel):
+    state: ReviewState = ReviewState.GENERATED
+    notes: str = ""
+    reviewer: str = ""
+    reviewed_at: datetime | None = None
+
+
+class AssetManifest(BaseModel):
+    asset: AssetIdentity
+    education: EducationMetadata
+    provenance: Provenance
+    files: FileManifest
+    runtime: RuntimeHints = Field(default_factory=RuntimeHints)
+    qa: QaSummary = Field(default_factory=QaSummary)
+    review: ReviewInfo = Field(default_factory=ReviewInfo)
