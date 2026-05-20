@@ -94,8 +94,13 @@ def qa(run_dir: Path) -> None:
     manifest_path = run_dir / "manifest.json"
     manifest = read_manifest(manifest_path)
     spec = _spec_from_manifest(run_dir, manifest_path)
-    advertised_export_dirs = _manifest_export_dirs(run_dir, manifest)
-    complete_export_dirs = _complete_export_package_dirs(run_dir)
+    complete_export_dirs = _export_package_dirs(
+        run_dir,
+        extra_dirs=[
+            *_manifest_export_dirs(run_dir, manifest),
+            *_complete_export_package_dirs(run_dir),
+        ],
+    )
 
     summary = run_qa(spec, run_dir / "optimize" / "asset.glb")
     manifest.qa = summary
@@ -111,7 +116,7 @@ def qa(run_dir: Path) -> None:
     )
     export_dirs = _export_package_dirs(
         run_dir,
-        extra_dirs=[*advertised_export_dirs, *complete_export_dirs],
+        extra_dirs=complete_export_dirs,
     )
     _sync_export_packages(
         manifest,
@@ -134,12 +139,17 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
             param_hint="run_dir",
         )
 
-    advertised_export_dirs = _manifest_export_dirs(run_dir, manifest)
-    complete_export_dirs = _complete_export_package_dirs(run_dir)
+    complete_export_dirs = _export_package_dirs(
+        run_dir,
+        extra_dirs=[
+            *_manifest_export_dirs(run_dir, manifest),
+            *_complete_export_package_dirs(run_dir),
+        ],
+    )
     outputs = export_profiles(run_dir, [profile])
     export_dirs = _export_package_dirs(
         run_dir,
-        extra_dirs=[*advertised_export_dirs, *complete_export_dirs, *outputs.values()],
+        extra_dirs=[*complete_export_dirs, *outputs.values()],
     )
     manifest.files.exports = _exports_from_package_dirs([*complete_export_dirs, *outputs.values()])
     write_manifest(manifest_path, manifest)
@@ -201,10 +211,11 @@ def _export_package_dirs(
 
 
 def _manifest_export_dirs(run_dir: Path, manifest: AssetManifest) -> list[Path]:
-    return _export_package_dirs(
+    export_dirs = _export_package_dirs(
         run_dir,
         extra_dirs=(Path(export_path) for export_path in manifest.files.exports.values()),
     )
+    return [export_dir for export_dir in export_dirs if _is_complete_export_package(export_dir)]
 
 
 def _complete_export_package_dirs(run_dir: Path) -> list[Path]:

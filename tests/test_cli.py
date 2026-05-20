@@ -125,6 +125,13 @@ def test_export_does_not_complete_or_later_advertise_near_complete_profile_dirs(
     partial_export_dir.mkdir()
     for package_file in ("asset.glb", "thumbnail.png", "turntable.webm", "IMPORT_NOTES.md"):
         (partial_export_dir / package_file).write_text("stale partial export\n", encoding="utf-8")
+    root_manifest_path = run_dir / "manifest.json"
+    root_manifest = read_json(root_manifest_path)
+    root_manifest["files"]["exports"]["unreal"] = str(partial_export_dir)
+    root_manifest_path.write_text(
+        json.dumps(root_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
     first_export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
     second_export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
