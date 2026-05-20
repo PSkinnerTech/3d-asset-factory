@@ -55,6 +55,15 @@ def write_box_with_negative_material_index(path: Path) -> None:
     gltf.save(path)
 
 
+def write_box_without_explicit_base_color(path: Path) -> None:
+    write_box(path)
+    gltf = GLTF2.load(path)
+    pbr = gltf.materials[0].pbrMetallicRoughness
+    pbr.baseColorFactor = None
+    pbr.baseColorTexture = None
+    gltf.save(path)
+
+
 def write_large_materialized_mesh(path: Path) -> None:
     mesh = trimesh.creation.icosphere(subdivisions=6, radius=1)
     material = trimesh.visual.material.PBRMaterial(baseColorFactor=[0.78, 0.47, 0.31, 1.0])
@@ -137,6 +146,20 @@ def test_qa_blocks_negative_material_index(tmp_path: Path):
     assert "Required base color data is missing" in report.blocking_failures
     assert report.metrics["primitive_count"] == 1
     assert report.metrics["primitives_missing_material"] == 1
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_material_without_explicit_base_color(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_without_explicit_base_color(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
     assert report.metrics["primitives_missing_base_color"] == 1
 
 

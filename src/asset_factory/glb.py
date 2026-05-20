@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import json
+import struct
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import trimesh
 from pygltflib import GLTF2
+
+_GLB_HEADER_LENGTH = 12
+_GLB_CHUNK_HEADER_LENGTH = 8
+_JSON_CHUNK_TYPE = 0x4E4F534A
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,43 @@ class GlbMetrics:
     primitives_missing_base_color: int
 
 
+def _load_glb_json(path: Path) -> dict[str, Any]:
+    data = path.read_bytes()
+    if len(data) < _GLB_HEADER_LENGTH:
+        raise ValueError("GLB header is incomplete")
+
+    magic, _version, _length = struct.unpack_from("<4sII", data, 0)
+    if magic != b"glTF":
+        raise ValueError("not binary GLTF!")
+
+    offset = _GLB_HEADER_LENGTH
+    while offset + _GLB_CHUNK_HEADER_LENGTH <= len(data):
+        chunk_length, chunk_type = struct.unpack_from("<II", data, offset)
+        offset += _GLB_CHUNK_HEADER_LENGTH
+        chunk_end = offset + chunk_length
+        if chunk_end > len(data):
+            raise ValueError("GLB chunk length exceeds file length")
+
+        chunk_data = data[offset:chunk_end]
+        offset = chunk_end
+        if chunk_type == _JSON_CHUNK_TYPE:
+            json_text = chunk_data.rstrip(b" \t\r\n\x00").decode("utf-8")
+            return json.loads(json_text)
+
+    raise ValueError("GLB JSON chunk is missing")
+
+
+def _has_explicit_base_color(material: Any) -> bool:
+    if not isinstance(material, dict):
+        return False
+
+    pbr = material.get("pbrMetallicRoughness")
+    if not isinstance(pbr, dict):
+        return False
+
+    return "baseColorFactor" in pbr or "baseColorTexture" in pbr
+
+
 def inspect_glb(path: Path) -> GlbMetrics:
     loaded = trimesh.load(path, force="scene")
     geometries = list(getattr(loaded, "geometry", {}).values())
@@ -31,7 +75,8 @@ def inspect_glb(path: Path) -> GlbMetrics:
         triangles += len(faces)
 
     gltf = GLTF2.load(path)
-    materials = gltf.materials or []
+    glb_json = _load_glb_json(path)
+    materials = glb_json.get("materials") or []
     primitive_count = 0
     primitives_missing_material = 0
     primitives_missing_base_color = 0
@@ -52,10 +97,7 @@ def inspect_glb(path: Path) -> GlbMetrics:
                 primitives_missing_base_color += 1
                 continue
 
-            pbr = materials[material_index].pbrMetallicRoughness
-            if pbr is None or (
-                pbr.baseColorFactor is None and pbr.baseColorTexture is None
-            ):
+            if not _has_explicit_base_color(materials[material_index]):
                 primitives_missing_base_color += 1
 
     has_material = primitive_count > 0 and primitives_missing_material == 0
