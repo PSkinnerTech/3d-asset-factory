@@ -184,6 +184,27 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runn
 The wrapper should copy `{image}` to the GPU host, run TRELLIS.2 there, and copy the remote
 `raw.glb` back to `{output}/raw.glb`.
 
+### Modal (MacBook controller, GPU in the cloud)
+
+Run the GPU step on Modal's serverless GPUs while the MacBook keeps doing concept generation,
+optimize, QA, review, and exports. The bridge script ships in this repo:
+
+```bash
+python -m pip install modal
+modal token new
+modal deploy infra/modal_trellis.py
+
+export OPENAI_API_KEY="sk-your-development-key"
+export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
+
+python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runner trellis
+```
+
+`scripts/modal_trellis_runner.py` validates inputs, calls the deployed Modal function, and
+writes `{output}/raw.glb`. `infra/modal_trellis.py` is a template — edit the TODO-marked image
+build and TRELLIS.2 entrypoint to match your upstream install. Full walkthrough in
+[docs/modal-cloud-inference.md](docs/modal-cloud-inference.md).
+
 ### Remote Runner API
 
 For a production setup, use a GPU service instead of SSH. A future remote runner should submit the

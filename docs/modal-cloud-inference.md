@@ -13,15 +13,24 @@ MacBook (you)                                Modal (cloud)
 -----------------------------------------    ----------------------------------
 python -m asset_factory generate ...  ---->  modal function: trellis_generate
   OpenAI GPT Image 2.0 concept                NVIDIA A10G / A100 / H100
-  TRELLIS2_COMMAND wrapper      <---- glb     conda env / pip env with trellis2
+  scripts/modal_trellis_runner.py <-- glb     conda env / pip env with trellis2
   optimize + preview                          model weights cached in volume
   QA + review + exports
 ```
 
 The MacBook never imports CUDA. The Modal function only does the GPU step. They communicate
-through the existing `TRELLIS2_COMMAND` seam — a small wrapper script on your laptop runs the
-Modal function (over the Modal CLI or Modal Python SDK), downloads the resulting GLB, and writes
-it to `{output}/raw.glb` so the rest of the pipeline picks it up unchanged.
+through the existing `TRELLIS2_COMMAND` seam — `scripts/modal_trellis_runner.py` runs on the
+laptop, calls the deployed Modal function, downloads the resulting GLB, and writes it to
+`{output}/raw.glb` so the rest of the pipeline picks it up unchanged.
+
+The files added for this integration are:
+
+- `scripts/modal_trellis_runner.py` — controller-side bridge invoked by `TRELLIS2_COMMAND`.
+  Production-quality: validates inputs, calls Modal, validates the GLB payload, writes
+  `{output}/raw.glb`, exits non-zero on any failure.
+- `infra/modal_trellis.py` — the Modal app/function definition. **Template** with `TODO`
+  markers for TRELLIS.2 install specifics (image build, weights, entrypoint).
+- `tests/test_modal_trellis_runner.py` — unit tests for the bridge that mock the Modal call.
 
 ## When to choose Modal
 
@@ -42,147 +51,75 @@ On the MacBook:
 - macOS with Python 3.11+ (matches `pyproject.toml`).
 - This repo cloned and installed with `python -m pip install -e ".[dev]"`.
 - A working `OPENAI_API_KEY`.
-- Homebrew, optional but convenient.
 
 Cloud side:
 
 - A Modal account at <https://modal.com>.
 - The `modal` CLI installed locally and authenticated.
-- Access to a GPU class with at least 24 GB VRAM (A10G is the typical minimum for TRELLIS.2,
+- Access to a GPU class with at least 24 GB VRAM (A10G is the typical minimum for TRELLIS.2;
   A100 / H100 is faster).
 
-## One-time Modal setup
+## One-time setup
 
-Install and log in to Modal from your MacBook:
+### 1. Install the Modal CLI and authenticate
 
 ```bash
 python -m pip install modal
 modal token new
 ```
 
-`modal token new` opens a browser, asks you to confirm, and stores the credentials in
+`modal token new` opens a browser, asks you to confirm, and stores credentials in
 `~/.modal.toml`. Confirm it worked:
 
 ```bash
 modal profile current
 ```
 
-Create a Modal secret for any API keys you want the GPU function to see. For this pipeline the
-GPU function does not call OpenAI — that stays on the laptop — so the secret is optional. If you
-do want the function to log into Hugging Face to pull TRELLIS.2 weights:
+### 2. Create the Hugging Face secret (optional)
+
+If the TRELLIS.2 checkpoints you target live behind a gated Hugging Face repo, create a Modal
+secret so the GPU function can pull them. Otherwise you can remove the `secrets=[...]` line
+from `infra/modal_trellis.py`.
 
 ```bash
 modal secret create huggingface HF_TOKEN=hf_your_token_here
 ```
 
-## The Modal app (template)
+### 3. Edit the TODOs in `infra/modal_trellis.py`
 
-Add a new file at the repo root, for example `infra/modal_trellis.py`. This file is an
-illustrative template — adjust the image build and the call into your TRELLIS.2 install to match
-the upstream project you are using.
+The controller-side runner is fully wired up, but the Modal app is a template because the
+exact TRELLIS.2 install command and entrypoint change across upstream commits and forks. Open
+`infra/modal_trellis.py` and replace every `TODO`-marked value:
 
-```python
-# infra/modal_trellis.py
-# Template: edit image build and the trellis2 call site to match your environment.
-import modal
+- `GPU` — the smallest GPU class with enough VRAM.
+- `BASE_IMAGE`, `PYTHON_VERSION` — CUDA + Python versions matching the TRELLIS.2 upstream.
+- `TRELLIS_REPO_URL`, `TRELLIS_INSTALL_DIR` — the TRELLIS.2 source you target.
+- The `pip_install(...)` dependency list — the full pinned dep set.
+- The `run_commands(...)` install step — the upstream's actual install command.
+- The body of `trellis_generate` — replace the placeholder `from trellis2.inference import
+  image_to_glb` block with the real entrypoint that produces `out_path` from `in_path`.
 
-GPU = "A10G"  # or "A100-40GB", "A100-80GB", "H100"
+The function must return raw GLB bytes. The runner asserts the bytes start with the `glTF`
+magic header before writing them to disk.
 
-image = (
-    modal.Image.from_registry("nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04", add_python="3.11")
-    .apt_install("git", "ffmpeg", "libgl1")
-    .pip_install(
-        "torch==2.4.0",
-        "torchvision==0.19.0",
-        # add the rest of the TRELLIS.2 dependency set here
-    )
-    .run_commands(
-        "git clone https://github.com/microsoft/TRELLIS.git /opt/trellis2",
-        "pip install -e /opt/trellis2",
-    )
-)
-
-weights_volume = modal.Volume.from_name("trellis2-weights", create_if_missing=True)
-
-app = modal.App("trellis2-inference")
-
-@app.function(
-    image=image,
-    gpu=GPU,
-    volumes={"/weights": weights_volume},
-    secrets=[modal.Secret.from_name("huggingface")],
-    timeout=60 * 15,
-)
-def trellis_generate(image_bytes: bytes, resolution: int = 1024) -> bytes:
-    import io, os, tempfile, pathlib
-    # 1) write the concept image to a temp file
-    work = pathlib.Path(tempfile.mkdtemp())
-    in_path = work / "concept.png"
-    in_path.write_bytes(image_bytes)
-    out_path = work / "raw.glb"
-
-    # 2) call into TRELLIS.2 — replace this block with the actual entrypoint
-    #    in the upstream repo, pointing weights at /weights.
-    os.environ["TRELLIS_WEIGHTS"] = "/weights"
-    from trellis2.inference import image_to_glb  # placeholder import
-    image_to_glb(str(in_path), str(out_path), resolution=resolution)
-
-    return out_path.read_bytes()
-```
-
-Deploy it once:
+### 4. Deploy the Modal app
 
 ```bash
 modal deploy infra/modal_trellis.py
 ```
 
-Run it ad-hoc to sanity-check the image build before wiring it into the pipeline:
+You can sanity-check the GPU function in isolation with the bundled local entrypoint:
 
 ```bash
-modal run infra/modal_trellis.py::trellis_generate --help
+modal run infra/modal_trellis.py::smoke --image-path /tmp/concept.png \
+                                        --output-path /tmp/raw.glb
 ```
 
-## Local wrapper script (template)
+If `smoke` produces a valid GLB at `/tmp/raw.glb`, the GPU side is fine and any remaining
+failures are on the controller. If `smoke` fails, fix the TRELLIS.2 entrypoint before wiring
+into the asset factory.
 
-`TRELLIS2_COMMAND` expects a process that reads `{image}`, writes `{output}/raw.glb`, and exits
-with status 0 on success. Add a script at `scripts/modal_trellis_runner.py` to bridge to Modal.
-This is a template — adapt to your Modal app name.
-
-```python
-# scripts/modal_trellis_runner.py
-# Template: invoked by TRELLIS2_COMMAND. Usage: modal_trellis_runner.py {image} {output} [resolution]
-import pathlib
-import sys
-
-import modal
-
-
-def main() -> int:
-    if len(sys.argv) < 3:
-        print("usage: modal_trellis_runner.py <image_path> <output_dir> [resolution]",
-              file=sys.stderr)
-        return 2
-    image_path = pathlib.Path(sys.argv[1])
-    output_dir = pathlib.Path(sys.argv[2])
-    resolution = int(sys.argv[3]) if len(sys.argv) > 3 else 1024
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    raw_glb = output_dir / "raw.glb"
-
-    fn = modal.Function.from_name("trellis2-inference", "trellis_generate")
-    glb_bytes = fn.remote(image_path.read_bytes(), resolution)
-    raw_glb.write_bytes(glb_bytes)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-Make sure the laptop has `modal` installed in the same Python environment you use for the
-pipeline.
-
-## Environment variables
+## Wire it into `TRELLIS2_COMMAND`
 
 On the MacBook before each run:
 
@@ -191,11 +128,19 @@ export OPENAI_API_KEY="sk-your-development-key"
 export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
 ```
 
-The runner expands `{image}`, `{output}`, and `{resolution}` based on the implementation in
-`src/asset_factory/runners/trellis.py`. The wrapper must write `{output}/raw.glb`, exit 0, and
-keep stderr clean enough to debug.
+The `TrellisCommandRunner` (see `src/asset_factory/runners/trellis.py`) expands `{image}`,
+`{output}`, and `{resolution}` from the pipeline state. The runner must produce
+`{output}/raw.glb`, exit 0 on success, and write a useful error to stderr otherwise.
 
-## Example end-to-end command
+`scripts/modal_trellis_runner.py` also accepts overrides through environment variables, useful
+if you want to run more than one Modal app side by side:
+
+```bash
+export MODAL_TRELLIS_APP="trellis2-inference"        # default
+export MODAL_TRELLIS_FUNCTION="trellis_generate"     # default
+```
+
+## End-to-end command
 
 ```bash
 export OPENAI_API_KEY="sk-your-development-key"
@@ -207,10 +152,14 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runn
 What happens, in order:
 
 1. Laptop renders the concept image with OpenAI GPT Image 2.0.
-2. The trellis runner expands `TRELLIS2_COMMAND` and launches `modal_trellis_runner.py`.
-3. The wrapper opens an authenticated Modal connection and calls `trellis_generate.remote(...)`.
-4. Modal cold-starts (first call) or reuses a warm container.
-5. The GLB bytes come back, get written to `runs/<asset_id>/<timestamp>/trellis/raw.glb`.
+2. `TrellisCommandRunner` expands `TRELLIS2_COMMAND` and launches
+   `scripts/modal_trellis_runner.py`.
+3. The runner reads the concept image bytes and looks up the deployed Modal function via
+   `modal.Function.from_name`.
+4. Modal cold-starts (first call) or reuses a warm container, runs TRELLIS.2, and returns the
+   raw GLB bytes.
+5. The runner validates the `glTF` magic header and writes
+   `runs/<asset_id>/<timestamp>/trellis/raw.glb`.
 6. Local steps continue: optimize, previews, QA, review HTML, export packages, manifest.
 
 ## Expected output contract
@@ -228,16 +177,35 @@ stdout, stderr, return code, and timing.
 ## Debugging tips
 
 - `modal app logs trellis2-inference` streams logs from the live deployment.
-- `modal run infra/modal_trellis.py::trellis_generate --image-bytes ...` lets you invoke the
-  function directly with a known-good payload, isolating laptop wrapper bugs from GPU bugs.
-- If you see `MissingRawGlbError`, the wrapper exited 0 but did not write `raw.glb`. Check that
-  `raw_glb.write_bytes(...)` ran and that the path matches `{output}/raw.glb`.
-- If you see `NonZeroReturnCodeError`, look at `trellis/raw_report.json` first — its `stderr`
-  field captures the wrapper's traceback.
-- Modal cold starts can be 30–90 s the first time per day. Keep a small warmer call if you need
-  predictable latency.
-- Pin `torch` / CUDA versions to what the TRELLIS.2 upstream tested with. Building the image
-  once and pinning is far cheaper than rebuilding on every code edit.
+- `modal run infra/modal_trellis.py::smoke --image-path concept.png --output-path raw.glb`
+  invokes the function directly, isolating laptop-wrapper bugs from GPU bugs.
+- If `raw_report.json` shows `error_type: MissingRawGlbError`, the runner exited 0 but did
+  not write `raw.glb`. Look at the runner stderr — `validate_glb_bytes` should have raised a
+  `RunnerError` first.
+- If `raw_report.json` shows `error_type: NonZeroReturnCodeError`, read the `stderr` field of
+  the report. The runner prefixes every error with `modal_trellis_runner:`.
+- `modal_trellis_runner: the 'modal' package is required ...` — `pip install modal` and run
+  `modal token new` in the same Python environment you use for the pipeline.
+- `modal_trellis_runner: could not look up Modal function ...` — you have not run
+  `modal deploy infra/modal_trellis.py` yet (or your local credentials point at a different
+  Modal workspace than the deployment).
+- `modal_trellis_runner: Modal function payload missing glTF magic header` — the function
+  returned data, but it is not a valid GLB. Likely the upstream TRELLIS.2 entrypoint produced
+  a different file format, or returned the wrong file. Use `modal run ... ::smoke` to inspect.
+- Modal cold starts can be 30–90 s the first time per day. Keep a warm pool with `min_containers`
+  on the function decorator if you need predictable latency.
+
+## Local testing without Modal
+
+`scripts/modal_trellis_runner.py` exposes an injectable `invoker` so you can run the
+controller logic without ever touching Modal. The bundled tests do this:
+
+```bash
+python -m pytest tests/test_modal_trellis_runner.py -q
+```
+
+The tests cover argument parsing, input validation, GLB header validation, output writing,
+and the failure-path exit codes the asset factory pipeline relies on.
 
 ## Cost and latency notes
 
@@ -245,7 +213,8 @@ stdout, stderr, return code, and timing.
   but several times the per-second rate.
 - Modal bills per-second of GPU wall time while the function is running, plus a small overhead
   for container startup. Idle warm containers don't bill GPU time.
-- Cache model weights in a `modal.Volume` so they don't re-download on cold start.
+- Cache model weights in a `modal.Volume` (already wired in the template) so they don't
+  re-download on cold start.
 - The OpenAI image cost is separate and incurred on the laptop side, not on Modal.
 
 ## When Modal is the right choice
