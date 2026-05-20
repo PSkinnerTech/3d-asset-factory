@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,11 +9,11 @@ from typing import Protocol
 
 from asset_factory.exports import export_profiles
 from asset_factory.manifest import apply_pipeline_outputs, create_initial_manifest, write_manifest
-from asset_factory.models import AssetManifest, AssetSpec
-from asset_factory.optimize import optimize_asset
+from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaSummary
+from asset_factory.optimize import OptimizedAsset, optimize_asset
 from asset_factory.prompts import build_image_prompt
 from asset_factory.qa import run_qa
-from asset_factory.runners.base import AssetRunner, RunnerRequest
+from asset_factory.runners.base import AssetRunner, RunnerRequest, RunnerResult
 from asset_factory.runs import RunLayout, create_run_layout
 
 
@@ -59,6 +60,11 @@ def generate_asset(
             resolution=1024,
         )
     )
+    if not runner_result.success:
+        raise RuntimeError(
+            f"Asset runner {runner_result.runner_type} failed; report: {runner_result.report_path}"
+        )
+
     optimized = optimize_asset(
         runner_result.raw_glb_path,
         generated_image.image_path,
@@ -71,9 +77,45 @@ def generate_asset(
         json.dumps(qa_summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+
+    manifest = _apply_outputs(
+        manifest=manifest,
+        generated_image=generated_image,
+        runner_result=runner_result,
+        optimized=optimized,
+        qa_report=qa_report,
+        qa_summary=qa_summary,
+        exports={},
+    )
+    write_manifest(layout.manifest_path, manifest)
+
     exports = export_profiles(layout.run_dir, spec.exports) if qa_summary.passed else {}
 
-    manifest = apply_pipeline_outputs(
+    manifest = _apply_outputs(
+        manifest=manifest,
+        generated_image=generated_image,
+        runner_result=runner_result,
+        optimized=optimized,
+        qa_report=qa_report,
+        qa_summary=qa_summary,
+        exports=exports,
+    )
+    write_manifest(layout.manifest_path, manifest)
+    _write_export_manifests(exports.values(), manifest)
+    return PipelineResult(run_dir=layout.run_dir, layout=layout, manifest=manifest)
+
+
+def _apply_outputs(
+    *,
+    manifest: AssetManifest,
+    generated_image: GeneratedConceptImage,
+    runner_result: RunnerResult,
+    optimized: OptimizedAsset,
+    qa_report: Path,
+    qa_summary: QaSummary,
+    exports: dict[ExportProfile, Path],
+) -> AssetManifest:
+    return apply_pipeline_outputs(
         manifest,
         prompt_path=generated_image.prompt_path,
         concept_image=generated_image.image_path,
@@ -89,5 +131,8 @@ def generate_asset(
         exports=exports,
         qa_summary=qa_summary,
     )
-    write_manifest(layout.manifest_path, manifest)
-    return PipelineResult(run_dir=layout.run_dir, layout=layout, manifest=manifest)
+
+
+def _write_export_manifests(export_dirs: Iterable[Path], manifest: AssetManifest) -> None:
+    for export_dir in export_dirs:
+        write_manifest(export_dir / "manifest.json", manifest)
