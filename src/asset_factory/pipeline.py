@@ -13,7 +13,6 @@ from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaSumm
 from asset_factory.optimize import OptimizedAsset, optimize_asset
 from asset_factory.prompts import build_image_prompt
 from asset_factory.qa import run_qa
-from asset_factory.review import write_review_html
 from asset_factory.runners.base import AssetRunner, RunnerRequest, RunnerResult
 from asset_factory.runs import RunLayout, create_run_layout
 
@@ -78,6 +77,8 @@ def generate_asset(
         json.dumps(qa_summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    from asset_factory.review import write_review_html
+
     review_html = write_review_html(
         layout.run_dir,
         asset_id=spec.id,
