@@ -72,7 +72,7 @@ def test_cli_help_renders():
     assert result.exit_code == 0
     assert "generate" in result.output
     assert "review" in result.output
-````
+```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
