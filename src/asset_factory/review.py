@@ -3,9 +3,21 @@ from __future__ import annotations
 import html
 import http.server
 import json
-import socketserver
 from functools import partial
 from pathlib import Path
+
+
+class ReviewHTTPServer(http.server.ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
+def _script_json(value: str) -> str:
+    return (
+        json.dumps(value)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
 
 
 def build_review_html(
@@ -26,7 +38,7 @@ def build_review_html(
         warning_items = "<li>No warnings reported.</li>"
     status_label = "Passed" if qa_passed else "Needs review"
     status_class = "passed" if qa_passed else "failed"
-    glb_url = json.dumps(f"../{glb_path}")
+    glb_url = _script_json(f"../{glb_path}")
 
     return f"""<!doctype html>
 <html lang="en">
@@ -110,11 +122,21 @@ def build_review_html(
     .status.passed {{ background: #dff7ea; color: var(--passed); }}
     .status.failed {{ background: #fde8e4; color: var(--failed); }}
     #viewer {{
+      position: relative;
       min-height: 560px;
       background: #111827;
       border-radius: 8px;
       overflow: hidden;
     }}
+    #viewer-status {{
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      color: #f9fafb;
+      font-size: 0.9rem;
+    }}
+    #viewer-status.error {{ color: #fecaca; }}
     .path {{
       overflow-wrap: anywhere;
       color: var(--muted);
@@ -152,16 +174,25 @@ def build_review_html(
     </aside>
     <section class="panel">
       <h2>3D Preview</h2>
-      <div id="viewer"></div>
+      <div id="viewer"><div id="viewer-status">Loading GLB...</div></div>
       <p class="path">GLB: {escaped_glb_path}</p>
       <p class="path">Thumbnail: {escaped_thumbnail}</p>
     </section>
   </main>
+  <script type="importmap">
+    {{
+      "imports": {{
+        "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+      }}
+    }}
+  </script>
   <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
-    import {{ GLTFLoader }} from 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/GLTFLoader.js';
+    import * as THREE from 'three';
+    import {{ GLTFLoader }} from 'three/addons/loaders/GLTFLoader.js';
 
     const viewer = document.getElementById('viewer');
+    const viewerStatus = document.getElementById('viewer-status');
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x111827);
 
@@ -185,11 +216,15 @@ def build_review_html(
 
     const loader = new GLTFLoader();
     loader.load({glb_url}, (gltf) => {{
+      viewerStatus.hidden = true;
       scene.add(gltf.scene);
       renderer.setAnimationLoop(() => {{
         gltf.scene.rotation.y += 0.01;
         renderer.render(scene, camera);
       }});
+    }}, undefined, () => {{
+      viewerStatus.textContent = 'GLB failed to load';
+      viewerStatus.classList.add('error');
     }});
 
     window.addEventListener('resize', () => {{
@@ -232,6 +267,6 @@ def write_review_html(
 
 def serve_review(run_dir: Path, port: int) -> None:
     handler = partial(http.server.SimpleHTTPRequestHandler, directory=run_dir)
-    with socketserver.TCPServer(("", port), handler) as httpd:
-        print(f"Serving review for {run_dir} at http://localhost:{port}/reports/review.html")
+    with ReviewHTTPServer(("127.0.0.1", port), handler) as httpd:
+        print(f"Serving review for {run_dir} at http://127.0.0.1:{port}/reports/review.html")
         httpd.serve_forever()
