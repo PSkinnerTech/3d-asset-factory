@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from PIL import Image
@@ -18,6 +19,12 @@ def test_mock_runner_writes_raw_glb_and_report(tmp_path: Path):
     assert result.raw_glb_path == output_dir / "raw.glb"
     assert result.report_path == output_dir / "raw_report.json"
     assert result.raw_glb_path.read_bytes()[:4] == b"glTF"
-    assert '"runner_type": "mock"' in result.report_path.read_text(encoding="utf-8")
+    report = json.loads(result.report_path.read_text(encoding="utf-8"))
+    assert report["runner_type"] == "mock"
+    assert report["runner_version"] == "0.1.0"
+    assert report["resolution"] == 512
+    assert report["concept_image"] == str(image_path)
+    assert report["raw_glb"] == str(output_dir / "raw.glb")
+    assert report["success"] is True
     assert result.runner_type == "mock"
     assert result.success is True
