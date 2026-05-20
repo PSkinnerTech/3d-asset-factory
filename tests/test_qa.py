@@ -117,6 +117,28 @@ def write_box_with_invalid_base_color_texture_index(path: Path) -> None:
     mutate_glb_json(path, mutate)
 
 
+def write_box_with_empty_base_color_texture_image(path: Path) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr.pop("baseColorFactor", None)
+        pbr["baseColorTexture"] = {"index": 0}
+        glb_json["textures"] = [{"source": 0}]
+        glb_json["images"] = [{}]
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_bool_material_index(path: Path) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        glb_json["meshes"][0]["primitives"][0]["material"] = False
+
+    mutate_glb_json(path, mutate)
+
+
 def write_large_materialized_mesh(path: Path) -> None:
     mesh = trimesh.creation.icosphere(subdivisions=6, radius=1)
     material = trimesh.visual.material.PBRMaterial(baseColorFactor=[0.78, 0.47, 0.31, 1.0])
@@ -244,6 +266,20 @@ def test_qa_blocks_wrong_length_base_color_factor(tmp_path: Path):
     assert report.metrics["primitives_missing_base_color"] == 1
 
 
+def test_qa_blocks_out_of_range_base_color_factor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_base_color_factor(glb_path, [-1, 2, 0.5, 1])
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
 def test_qa_blocks_invalid_base_color_texture_index(tmp_path: Path):
     glb_path = tmp_path / "asset.glb"
     write_box_with_invalid_base_color_texture_index(glb_path)
@@ -255,6 +291,34 @@ def test_qa_blocks_invalid_base_color_texture_index(tmp_path: Path):
     assert "Required base color data is missing" in report.blocking_failures
     assert report.metrics["primitive_count"] == 1
     assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_empty_base_color_texture_image(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_empty_base_color_texture_image(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_bool_material_index(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_bool_material_index(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 1
     assert report.metrics["primitives_missing_base_color"] == 1
 
 

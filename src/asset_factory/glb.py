@@ -68,7 +68,26 @@ def _has_valid_base_color_factor(pbr: dict[str, Any]) -> bool:
     return (
         isinstance(factor, list)
         and len(factor) == 4
-        and all(isinstance(value, Real) and not isinstance(value, bool) for value in factor)
+        and all(
+            isinstance(value, Real) and not isinstance(value, bool) and 0.0 <= value <= 1.0
+            for value in factor
+        )
+    )
+
+
+def _has_usable_image_data(image: Any, glb_json: dict[str, Any]) -> bool:
+    if not isinstance(image, dict):
+        return False
+
+    uri = image.get("uri")
+    if isinstance(uri, str) and uri.strip():
+        return True
+
+    mime_type = image.get("mimeType")
+    return (
+        isinstance(mime_type, str)
+        and bool(mime_type.strip())
+        and _is_valid_index(image.get("bufferView"), glb_json.get("bufferViews"))
     )
 
 
@@ -87,7 +106,10 @@ def _has_valid_base_color_texture(pbr: dict[str, Any], glb_json: dict[str, Any])
         return False
 
     images = glb_json.get("images")
-    return _is_valid_index(texture.get("source"), images)
+    source_index = texture.get("source")
+    return _is_valid_index(source_index, images) and _has_usable_image_data(
+        images[source_index], glb_json
+    )
 
 
 def _has_explicit_base_color(material: Any, glb_json: dict[str, Any]) -> bool:
@@ -126,11 +148,7 @@ def inspect_glb(path: Path) -> GlbMetrics:
 
             primitive_count += 1
             material_index = primitive.material
-            if (
-                material_index is None
-                or material_index < 0
-                or material_index >= len(materials)
-            ):
+            if not _is_valid_index(material_index, materials):
                 primitives_missing_material += 1
                 primitives_missing_base_color += 1
                 continue
