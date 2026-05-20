@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import struct
 from dataclasses import dataclass
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +53,44 @@ def _load_glb_json(path: Path) -> dict[str, Any]:
     raise ValueError("GLB JSON chunk is missing")
 
 
-def _has_explicit_base_color(material: Any) -> bool:
+def _is_valid_index(value: Any, items: Any) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+        and isinstance(items, list)
+        and value < len(items)
+    )
+
+
+def _has_valid_base_color_factor(pbr: dict[str, Any]) -> bool:
+    factor = pbr.get("baseColorFactor")
+    return (
+        isinstance(factor, list)
+        and len(factor) == 4
+        and all(isinstance(value, Real) and not isinstance(value, bool) for value in factor)
+    )
+
+
+def _has_valid_base_color_texture(pbr: dict[str, Any], glb_json: dict[str, Any]) -> bool:
+    texture_info = pbr.get("baseColorTexture")
+    if not isinstance(texture_info, dict):
+        return False
+
+    textures = glb_json.get("textures")
+    texture_index = texture_info.get("index")
+    if not _is_valid_index(texture_index, textures):
+        return False
+
+    texture = textures[texture_index]
+    if not isinstance(texture, dict):
+        return False
+
+    images = glb_json.get("images")
+    return _is_valid_index(texture.get("source"), images)
+
+
+def _has_explicit_base_color(material: Any, glb_json: dict[str, Any]) -> bool:
     if not isinstance(material, dict):
         return False
 
@@ -60,7 +98,7 @@ def _has_explicit_base_color(material: Any) -> bool:
     if not isinstance(pbr, dict):
         return False
 
-    return "baseColorFactor" in pbr or "baseColorTexture" in pbr
+    return _has_valid_base_color_factor(pbr) or _has_valid_base_color_texture(pbr, glb_json)
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
@@ -97,7 +135,7 @@ def inspect_glb(path: Path) -> GlbMetrics:
                 primitives_missing_base_color += 1
                 continue
 
-            if not _has_explicit_base_color(materials[material_index]):
+            if not _has_explicit_base_color(materials[material_index], glb_json):
                 primitives_missing_base_color += 1
 
     has_material = primitive_count > 0 and primitives_missing_material == 0

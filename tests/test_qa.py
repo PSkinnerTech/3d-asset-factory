@@ -1,3 +1,6 @@
+import json
+import struct
+from collections.abc import Callable
 from pathlib import Path
 
 import trimesh
@@ -5,6 +8,10 @@ from pygltflib import GLTF2
 
 from asset_factory.models import AssetSpec, ExportProfile, QaThresholds, ScienceSubject, StyleMode
 from asset_factory.qa import run_qa
+
+_GLB_HEADER_LENGTH = 12
+_GLB_CHUNK_HEADER_LENGTH = 8
+_JSON_CHUNK_TYPE = 0x4E4F534A
 
 
 def make_spec(max_triangles: int = 1000, max_glb_mb: int = 10) -> AssetSpec:
@@ -62,6 +69,52 @@ def write_box_without_explicit_base_color(path: Path) -> None:
     pbr.baseColorFactor = None
     pbr.baseColorTexture = None
     gltf.save(path)
+
+
+def mutate_glb_json(path: Path, mutate: Callable[[dict], None]) -> None:
+    data = path.read_bytes()
+    magic, version, _length = struct.unpack_from("<4sII", data, 0)
+    chunks = []
+    offset = _GLB_HEADER_LENGTH
+    while offset + _GLB_CHUNK_HEADER_LENGTH <= len(data):
+        chunk_length, chunk_type = struct.unpack_from("<II", data, offset)
+        offset += _GLB_CHUNK_HEADER_LENGTH
+        chunk_data = data[offset : offset + chunk_length]
+        offset += chunk_length
+
+        if chunk_type == _JSON_CHUNK_TYPE:
+            glb_json = json.loads(chunk_data.rstrip(b" \t\r\n\x00").decode("utf-8"))
+            mutate(glb_json)
+            chunk_data = json.dumps(glb_json, separators=(",", ":")).encode("utf-8")
+            chunk_data += b" " * (-len(chunk_data) % 4)
+            chunk_length = len(chunk_data)
+
+        chunks.append(struct.pack("<II", chunk_length, chunk_type) + chunk_data)
+
+    body = b"".join(chunks)
+    path.write_bytes(struct.pack("<4sII", magic, version, _GLB_HEADER_LENGTH + len(body)) + body)
+
+
+def write_box_with_base_color_factor(path: Path, factor: object) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr["baseColorFactor"] = factor
+        pbr.pop("baseColorTexture", None)
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_invalid_base_color_texture_index(path: Path) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr.pop("baseColorFactor", None)
+        pbr["baseColorTexture"] = {"index": 999}
+
+    mutate_glb_json(path, mutate)
 
 
 def write_large_materialized_mesh(path: Path) -> None:
@@ -152,6 +205,48 @@ def test_qa_blocks_negative_material_index(tmp_path: Path):
 def test_qa_blocks_material_without_explicit_base_color(tmp_path: Path):
     glb_path = tmp_path / "asset.glb"
     write_box_without_explicit_base_color(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_null_base_color_factor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_base_color_factor(glb_path, None)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_wrong_length_base_color_factor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_base_color_factor(glb_path, [0.78, 0.47, 0.31])
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_invalid_base_color_texture_index(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_invalid_base_color_texture_index(glb_path)
 
     report = run_qa(make_spec(), glb_path)
 
