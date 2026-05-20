@@ -57,3 +57,4 @@ def test_generate_image_writes_prompt_and_png(tmp_path: Path):
     assert (tmp_path / "prompt.txt").read_text(encoding="utf-8") == "single isolated lever"
     assert client.images.calls[0]["model"] == "gpt-image-2"
     assert client.images.calls[0]["prompt"] == "single isolated lever"
+    assert client.images.calls[0]["size"] == "1024x1024"
