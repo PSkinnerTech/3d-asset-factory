@@ -1,0 +1,10 @@
+id: fern_spores_001
+subject: biology
+object: fern leaf underside with spores
+grade_band: "6-8"
+style: realistic
+learning_goal: Recognize sori as spore-producing structures on the underside of fern leaves.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 180000
+  max_glb_mb: 35

@@ -1,0 +1,10 @@
+id: trilobite_fossil_001
+subject: earth_science
+object: trilobite fossil
+grade_band: "6-8"
+style: realistic
+learning_goal: Recognize fossil body segmentation and preserved exoskeleton structure.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 180000
+  max_glb_mb: 35

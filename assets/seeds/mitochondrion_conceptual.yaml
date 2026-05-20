@@ -1,0 +1,10 @@
+id: mitochondrion_001
+subject: biology
+object: mitochondrion
+grade_band: "6-8"
+style: conceptual
+learning_goal: Identify the outer membrane, inner membrane, matrix, and cristae.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 150000
+  max_glb_mb: 25

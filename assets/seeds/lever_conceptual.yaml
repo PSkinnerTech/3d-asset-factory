@@ -1,0 +1,10 @@
+id: lever_001
+subject: physics
+object: lever
+grade_band: "3-5"
+style: conceptual
+learning_goal: Identify the fulcrum, effort, load, and lever arm.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 100000
+  max_glb_mb: 20

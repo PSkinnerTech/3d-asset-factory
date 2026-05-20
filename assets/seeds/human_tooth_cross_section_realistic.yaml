@@ -1,0 +1,10 @@
+id: human_tooth_cross_section_001
+subject: biology
+object: human tooth cross-section
+grade_band: "6-8"
+style: realistic
+learning_goal: Identify enamel, dentin, pulp, crown, and root in a simplified tooth cross-section.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 180000
+  max_glb_mb: 35

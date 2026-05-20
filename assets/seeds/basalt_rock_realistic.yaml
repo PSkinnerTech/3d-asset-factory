@@ -1,0 +1,10 @@
+id: basalt_rock_001
+subject: earth_science
+object: basalt rock sample
+grade_band: "6-8"
+style: realistic
+learning_goal: Recognize fine-grained igneous rock texture and dark basalt coloration.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 160000
+  max_glb_mb: 30

@@ -1,0 +1,10 @@
+id: pulley_001
+subject: physics
+object: pulley
+grade_band: "3-5"
+style: conceptual
+learning_goal: Identify the wheel, axle, rope, and load direction.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 120000
+  max_glb_mb: 22

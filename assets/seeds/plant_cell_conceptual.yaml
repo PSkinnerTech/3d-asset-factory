@@ -1,0 +1,10 @@
+id: plant_cell_001
+subject: biology
+object: plant cell
+grade_band: "6-8"
+style: conceptual
+learning_goal: Identify the cell wall, nucleus, chloroplasts, vacuole, and cytoplasm.
+exports: ["web", "unity", "unreal"]
+qa:
+  max_triangles: 180000
+  max_glb_mb: 30
