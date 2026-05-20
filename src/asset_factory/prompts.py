@@ -11,16 +11,19 @@ def build_image_prompt(spec: AssetSpec) -> str:
         "no labels, no arrows, no text, no watermark, no surrounding scene. "
         "The image must be suitable as a source image for image-to-3D asset generation."
     )
-    if spec.style is StyleMode.CONCEPTUAL:
-        style = (
-            "Style: conceptual educational 3D asset reference with simplified readable parts, "
-            "clean forms, clear silhouette, gentle color separation, and structure accuracy "
-            "over realism."
-        )
-    else:
-        style = (
-            "Style: realistic educational 3D asset reference with recognizable natural form, "
-            "plausible material detail, accurate silhouette, and object isolation over "
-            "dramatic lighting."
-        )
+    match spec.style:
+        case StyleMode.CONCEPTUAL:
+            style = (
+                "Style: conceptual educational 3D asset reference with simplified readable parts, "
+                "clean forms, clear silhouette, gentle color separation, and structure accuracy "
+                "over realism."
+            )
+        case StyleMode.REALISTIC:
+            style = (
+                "Style: realistic educational 3D asset reference with recognizable natural form, "
+                "plausible material detail, accurate silhouette, and object isolation over "
+                "dramatic lighting."
+            )
+        case _:
+            raise ValueError(f"Unsupported style mode: {spec.style}")
     return f"{base} {style}"
