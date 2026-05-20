@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -11,7 +12,7 @@ from PIL import Image, ImageDraw
 from asset_factory.exports import export_profiles
 from asset_factory.images import OpenAIImageGenerator
 from asset_factory.manifest import read_manifest, write_manifest
-from asset_factory.models import AssetSpec, ExportProfile, QaThresholds
+from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaThresholds
 from asset_factory.pipeline import generate_asset
 from asset_factory.qa import run_qa
 from asset_factory.runners.mock import MockRunner
@@ -86,6 +87,8 @@ def qa(run_dir: Path) -> None:
 
     summary = run_qa(spec, run_dir / "optimize" / "asset.glb")
     manifest.qa = summary
+    if not summary.passed:
+        manifest.files.exports = {}
     write_manifest(manifest_path, manifest)
 
     qa_report = run_dir / "reports" / "qa.json"
@@ -94,6 +97,7 @@ def qa(run_dir: Path) -> None:
         json.dumps(summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    _sync_export_packages(manifest, qa_report)
 
     typer.echo(f"QA passed: {summary.passed}")
 
@@ -108,9 +112,9 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
         {export_profile: str(path) for export_profile, path in outputs.items()}
     )
     write_manifest(manifest_path, manifest)
+    _sync_export_packages(manifest, run_dir / "reports" / "qa.json")
 
     for export_profile, output_dir in outputs.items():
-        write_manifest(output_dir / "manifest.json", manifest)
         typer.echo(f"Exported {export_profile.value}: {output_dir}")
 
 
@@ -142,3 +146,14 @@ def _spec_from_manifest(run_dir: Path, manifest_path: Path) -> AssetSpec:
         exports=list(manifest.files.exports) or [ExportProfile.WEB],
         qa=QaThresholds(max_triangles=150000, max_glb_mb=25),
     )
+
+
+def _sync_export_packages(manifest: AssetManifest, qa_report: Path) -> None:
+    for export_path in manifest.files.exports.values():
+        export_dir = Path(export_path)
+        if not export_dir.is_dir():
+            continue
+
+        write_manifest(export_dir / "manifest.json", manifest)
+        if qa_report.exists():
+            shutil.copy2(qa_report, export_dir / "qa.json")
