@@ -99,10 +99,12 @@ def qa(run_dir: Path) -> None:
         json.dumps(summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    export_dirs = _export_package_dirs(run_dir, manifest, extra_dirs=previous_export_dirs)
     _sync_export_packages(
         manifest,
         qa_report,
-        export_dirs=previous_export_dirs if not summary.passed else None,
+        run_dir / "exports",
+        export_dirs=export_dirs,
     )
 
     typer.echo(f"QA passed: {summary.passed}")
@@ -119,12 +121,21 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
             param_hint="run_dir",
         )
 
+    previous_export_dirs = _export_package_dirs(run_dir, manifest)
     outputs = export_profiles(run_dir, [profile])
-    manifest.files.exports.update(
-        {export_profile: str(path) for export_profile, path in outputs.items()}
+    export_dirs = _export_package_dirs(
+        run_dir,
+        manifest,
+        extra_dirs=[*previous_export_dirs, *outputs.values()],
     )
+    manifest.files.exports = _exports_from_package_dirs(export_dirs)
     write_manifest(manifest_path, manifest)
-    _sync_export_packages(manifest, run_dir / "reports" / "qa.json")
+    _sync_export_packages(
+        manifest,
+        run_dir / "reports" / "qa.json",
+        run_dir / "exports",
+        export_dirs=export_dirs,
+    )
 
     for export_profile, output_dir in outputs.items():
         typer.echo(f"Exported {export_profile.value}: {output_dir}")
@@ -140,13 +151,13 @@ def review(run_dir: Path, port: int = 8765) -> None:
 
 def _spec_from_manifest(run_dir: Path, manifest_path: Path) -> AssetSpec:
     manifest = read_manifest(manifest_path)
-    source_spec = Path(manifest.provenance.source_spec) if manifest.provenance.source_spec else None
-    if source_spec and source_spec.exists():
-        return load_asset_spec(source_spec)
-
     copied_spec = run_dir / "input" / "asset.yaml"
     if copied_spec.exists():
         return load_asset_spec(copied_spec)
+
+    source_spec = Path(manifest.provenance.source_spec) if manifest.provenance.source_spec else None
+    if source_spec and source_spec.exists():
+        return load_asset_spec(source_spec)
 
     return AssetSpec(
         id=manifest.asset.id,
@@ -160,32 +171,68 @@ def _spec_from_manifest(run_dir: Path, manifest_path: Path) -> AssetSpec:
     )
 
 
-def _export_package_dirs(run_dir: Path, manifest: AssetManifest) -> list[Path]:
+def _export_package_dirs(
+    run_dir: Path,
+    manifest: AssetManifest,
+    extra_dirs: Iterable[Path] = (),
+) -> list[Path]:
     export_dirs = [Path(export_path) for export_path in manifest.files.exports.values()]
-    exports_root = run_dir / "exports"
+    export_dirs.extend(extra_dirs)
+    exports_root = (run_dir / "exports").resolve()
     if exports_root.is_dir():
         export_dirs.extend(path for path in exports_root.iterdir() if path.is_dir())
 
     deduped: dict[Path, None] = {}
     for export_dir in export_dirs:
-        deduped[export_dir.resolve()] = None
+        resolved = export_dir.resolve()
+        if not _is_export_package_dir(resolved, exports_root):
+            continue
+        if not resolved.is_dir():
+            continue
+        deduped[resolved] = None
     return list(deduped)
+
+
+def _exports_from_package_dirs(export_dirs: Iterable[Path]) -> dict[ExportProfile, str]:
+    exports: dict[ExportProfile, str] = {}
+    for export_dir in export_dirs:
+        try:
+            profile = ExportProfile(export_dir.name)
+        except ValueError:
+            continue
+        exports[profile] = str(export_dir)
+    return exports
+
+
+def _is_export_package_dir(path: Path, exports_root: Path) -> bool:
+    if path == exports_root:
+        return False
+    try:
+        path.relative_to(exports_root)
+    except ValueError:
+        return False
+    return True
 
 
 def _sync_export_packages(
     manifest: AssetManifest,
     qa_report: Path,
+    exports_root: Path,
     export_dirs: Iterable[Path] | None = None,
 ) -> None:
+    resolved_exports_root = exports_root.resolve()
     if export_dirs is None:
         package_dirs = (Path(export_path) for export_path in manifest.files.exports.values())
     else:
         package_dirs = export_dirs
 
     for export_dir in package_dirs:
-        if not export_dir.is_dir():
+        resolved_export_dir = export_dir.resolve()
+        if not _is_export_package_dir(resolved_export_dir, resolved_exports_root):
+            continue
+        if not resolved_export_dir.is_dir():
             continue
 
-        write_manifest(export_dir / "manifest.json", manifest)
+        write_manifest(resolved_export_dir / "manifest.json", manifest)
         if qa_report.exists():
-            shutil.copy2(qa_report, export_dir / "qa.json")
+            shutil.copy2(qa_report, resolved_export_dir / "qa.json")
