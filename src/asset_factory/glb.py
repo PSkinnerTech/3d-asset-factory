@@ -170,8 +170,8 @@ def _has_explicit_base_color(material: Any, glb_json: dict[str, Any], glb_parent
     return True
 
 
-def _has_vertex_color_attribute(attributes: Any) -> bool:
-    return getattr(attributes, "COLOR_0", None) is not None
+def _has_vertex_color_attribute(attributes: Any, glb_json: dict[str, Any]) -> bool:
+    return _is_valid_index(getattr(attributes, "COLOR_0", None), glb_json.get("accessors"))
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
@@ -199,7 +199,7 @@ def inspect_glb(path: Path) -> GlbMetrics:
 
             primitive_count += 1
             material_index = primitive.material
-            if material_index is None and _has_vertex_color_attribute(attributes):
+            if material_index is None and _has_vertex_color_attribute(attributes, glb_json):
                 continue
 
             if not _is_valid_index(material_index, materials):
