@@ -15,7 +15,8 @@ _GLB_HEADER_LENGTH = 12
 _GLB_CHUNK_HEADER_LENGTH = 8
 _JSON_CHUNK_TYPE = 0x4E4F534A
 _COLOR_ACCESSOR_TYPES = {"VEC3", "VEC4"}
-_COLOR_COMPONENT_TYPES = {5120, 5121, 5122, 5123, 5126}
+_COLOR_FLOAT_COMPONENT_TYPE = 5126
+_COLOR_NORMALIZED_INTEGER_COMPONENT_TYPES = {5121, 5123}
 
 
 @dataclass(frozen=True)
@@ -193,7 +194,13 @@ def _has_vertex_color_attribute(attributes: Any, glb_json: dict[str, Any]) -> bo
     if color_accessor.get("type") not in _COLOR_ACCESSOR_TYPES:
         return False
 
-    if color_accessor.get("componentType") not in _COLOR_COMPONENT_TYPES:
+    component_type = color_accessor.get("componentType")
+    if component_type == _COLOR_FLOAT_COMPONENT_TYPE:
+        pass
+    elif component_type in _COLOR_NORMALIZED_INTEGER_COMPONENT_TYPES:
+        if color_accessor.get("normalized") is not True:
+            return False
+    else:
         return False
 
     buffer_views = glb_json.get("bufferViews")
