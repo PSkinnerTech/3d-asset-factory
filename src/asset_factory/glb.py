@@ -171,7 +171,24 @@ def _has_explicit_base_color(material: Any, glb_json: dict[str, Any], glb_parent
 
 
 def _has_vertex_color_attribute(attributes: Any, glb_json: dict[str, Any]) -> bool:
-    return _is_valid_index(getattr(attributes, "COLOR_0", None), glb_json.get("accessors"))
+    accessors = glb_json.get("accessors")
+    color_accessor_index = getattr(attributes, "COLOR_0", None)
+    if not _is_valid_index(color_accessor_index, accessors):
+        return False
+
+    color_accessor = accessors[color_accessor_index]
+    if not isinstance(color_accessor, dict):
+        return False
+
+    count = color_accessor.get("count")
+    if not (isinstance(count, int) and not isinstance(count, bool) and count > 0):
+        return False
+
+    buffer_views = glb_json.get("bufferViews")
+    buffer_view_index = color_accessor.get("bufferView")
+    return _is_valid_index(buffer_view_index, buffer_views) and _has_positive_byte_length(
+        buffer_views[buffer_view_index]
+    )
 
 
 def inspect_glb(path: Path) -> GlbMetrics:

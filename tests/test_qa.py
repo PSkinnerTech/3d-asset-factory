@@ -59,6 +59,30 @@ def write_vertex_colored_box_with_invalid_color_accessor(path: Path) -> None:
     mutate_glb_json(path, mutate)
 
 
+def write_vertex_colored_box_with_empty_color_accessor(path: Path) -> None:
+    write_vertex_colored_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        primitive = glb_json["meshes"][0]["primitives"][0]
+        color_accessor = glb_json["accessors"][primitive["attributes"]["COLOR_0"]]
+        color_accessor["count"] = 0
+
+    mutate_glb_json(path, mutate)
+
+
+def write_vertex_colored_box_with_dataless_color_accessor(path: Path) -> None:
+    write_vertex_colored_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        primitive = glb_json["meshes"][0]["primitives"][0]
+        color_accessor = glb_json["accessors"][primitive["attributes"]["COLOR_0"]]
+        color_accessor["count"] = 1
+        color_accessor.pop("bufferView", None)
+        color_accessor.pop("sparse", None)
+
+    mutate_glb_json(path, mutate)
+
+
 def write_mixed_material_scene(path: Path) -> None:
     materialized = trimesh.creation.box(extents=(1, 1, 1))
     material = trimesh.visual.material.PBRMaterial(baseColorFactor=[0.78, 0.47, 0.31, 1.0])
@@ -265,6 +289,34 @@ def test_qa_passes_vertex_colored_glb(tmp_path: Path):
 def test_qa_blocks_invalid_vertex_color_accessor(tmp_path: Path):
     glb_path = tmp_path / "asset.glb"
     write_vertex_colored_box_with_invalid_color_accessor(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 1
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_empty_vertex_color_accessor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_vertex_colored_box_with_empty_color_accessor(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 1
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_dataless_vertex_color_accessor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_vertex_colored_box_with_dataless_color_accessor(glb_path)
 
     report = run_qa(make_spec(), glb_path)
 
