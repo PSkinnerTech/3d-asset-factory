@@ -4,12 +4,9 @@ CLI-first developer tool for generating educational science 3D assets from check
 
 ## Reference Demo
 
-GitHub README files do not render X/Twitter iframe embeds, so the demo is linked directly:
+[![TRELLIS.2 image-to-3D demo](docs/assets/trellis-demo.gif)](https://x.com/HowToAI_/status/2056387308287676819)
 
-[Watch the TRELLIS.2 image-to-3D demo video on X](https://x.com/HowToAI_/status/2056387308287676819)
-
-If this README needs true inline playback later, upload a copy of the video as a GitHub release
-asset or repository media file and embed that direct `.mp4` URL.
+Click the GIF to open the original X post.
 
 ## Development
 
