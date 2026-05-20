@@ -25,6 +25,10 @@ def test_create_run_layout_writes_expected_directories(tmp_path: Path):
     layout = create_run_layout(make_spec(), tmp_path, timestamp="20260520T120000Z")
 
     assert layout.run_dir == tmp_path / "runs" / "lever_001" / "20260520T120000Z"
+    assert (
+        layout.manifest_path
+        == tmp_path / "runs" / "lever_001" / "20260520T120000Z" / "manifest.json"
+    )
     assert layout.input_dir.is_dir()
     assert layout.image_dir.is_dir()
     assert layout.trellis_dir.is_dir()
