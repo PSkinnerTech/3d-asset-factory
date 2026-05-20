@@ -53,6 +53,23 @@ def write_manifest(path: Path, manifest: AssetManifest) -> None:
     )
 
 
+def package_local_manifest(manifest: AssetManifest, profile: ExportProfile) -> AssetManifest:
+    package_manifest = manifest.model_copy(deep=True)
+    package_manifest.files.concept_image = None
+    package_manifest.files.raw_glb = None
+    package_manifest.files.optimized_glb = "asset.glb"
+    package_manifest.files.thumbnail = "thumbnail.png"
+    package_manifest.files.turntable = "turntable.webm"
+    package_manifest.files.qa_report = "qa.json"
+    package_manifest.files.review_html = None
+    package_manifest.files.exports = {profile: "."}
+    return package_manifest
+
+
+def write_package_manifest(path: Path, manifest: AssetManifest, profile: ExportProfile) -> None:
+    write_manifest(path, package_local_manifest(manifest, profile))
+
+
 def read_manifest(path: Path) -> AssetManifest:
     return AssetManifest.model_validate_json(path.read_text(encoding="utf-8"))
 

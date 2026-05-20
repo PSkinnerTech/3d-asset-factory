@@ -81,12 +81,17 @@ def test_generate_asset_creates_complete_run(tmp_path: Path):
 
     for profile in (ExportProfile.WEB, ExportProfile.UNITY):
         exported_manifest = read_manifest(run_dir / "exports" / profile.value / "manifest.json")
-        assert exported_manifest == result.manifest
         assert exported_manifest.qa.passed is True
         assert exported_manifest.provenance.openai_model == "fake-image-model"
         assert exported_manifest.provenance.runner_type == "mock"
-        assert exported_manifest.files.exports == result.manifest.files.exports
-        assert exported_manifest.files.review_html == str(run_dir / "reports" / "review.html")
+        assert exported_manifest.files.optimized_glb == "asset.glb"
+        assert exported_manifest.files.thumbnail == "thumbnail.png"
+        assert exported_manifest.files.turntable == "turntable.webm"
+        assert exported_manifest.files.qa_report == "qa.json"
+        assert exported_manifest.files.raw_glb is None
+        assert exported_manifest.files.concept_image is None
+        assert exported_manifest.files.review_html is None
+        assert exported_manifest.files.exports == {profile: "."}
 
 
 def test_generate_asset_skips_exports_when_qa_fails(tmp_path: Path):

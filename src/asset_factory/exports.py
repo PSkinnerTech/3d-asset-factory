@@ -13,7 +13,6 @@ def export_profiles(run_dir: Path, profiles: list[ExportProfile]) -> dict[Export
         export_dir.mkdir(parents=True, exist_ok=True)
         for source_name, target_name in (
             ("optimize/asset.glb", "asset.glb"),
-            ("manifest.json", "manifest.json"),
             ("previews/thumbnail.png", "thumbnail.png"),
             ("previews/turntable.webm", "turntable.webm"),
             ("reports/qa.json", "qa.json"),

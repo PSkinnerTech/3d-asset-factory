@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
 from asset_factory.exports import export_profiles
-from asset_factory.manifest import apply_pipeline_outputs, create_initial_manifest, write_manifest
+from asset_factory.manifest import (
+    apply_pipeline_outputs,
+    create_initial_manifest,
+    write_manifest,
+    write_package_manifest,
+)
 from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaSummary
 from asset_factory.optimize import OptimizedAsset, optimize_asset
 from asset_factory.prompts import build_image_prompt
@@ -114,7 +118,7 @@ def generate_asset(
         exports=exports,
     )
     write_manifest(layout.manifest_path, manifest)
-    _write_export_manifests(exports.values(), manifest)
+    _write_export_manifests(exports, manifest)
     return PipelineResult(run_dir=layout.run_dir, layout=layout, manifest=manifest)
 
 
@@ -147,6 +151,9 @@ def _apply_outputs(
     )
 
 
-def _write_export_manifests(export_dirs: Iterable[Path], manifest: AssetManifest) -> None:
-    for export_dir in export_dirs:
-        write_manifest(export_dir / "manifest.json", manifest)
+def _write_export_manifests(
+    exports: dict[ExportProfile, Path],
+    manifest: AssetManifest,
+) -> None:
+    for profile, export_dir in exports.items():
+        write_package_manifest(export_dir / "manifest.json", manifest, profile)

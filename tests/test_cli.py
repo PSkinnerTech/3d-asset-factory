@@ -44,6 +44,17 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def assert_package_local_manifest(manifest: dict, profile: str) -> None:
+    assert manifest["files"]["optimized_glb"] == "asset.glb"
+    assert manifest["files"]["thumbnail"] == "thumbnail.png"
+    assert manifest["files"]["turntable"] == "turntable.webm"
+    assert manifest["files"]["qa_report"] == "qa.json"
+    assert manifest["files"]["raw_glb"] is None
+    assert manifest["files"]["concept_image"] is None
+    assert manifest["files"]["review_html"] is None
+    assert manifest["files"]["exports"] == {profile: "."}
+
+
 def set_copied_spec_max_triangles(run_dir: Path, max_triangles: int) -> None:
     copied_spec = run_dir / "input" / "asset.yaml"
     lines = copied_spec.read_text(encoding="utf-8").splitlines()
@@ -101,8 +112,12 @@ def test_export_updates_existing_export_manifests(tmp_path: Path):
     web_manifest = read_json(run_dir / "exports" / "web" / "manifest.json")
     unity_manifest = read_json(run_dir / "exports" / "unity" / "manifest.json")
     assert set(root_manifest["files"]["exports"]) == {"web", "unity"}
-    assert web_manifest == root_manifest
-    assert unity_manifest == root_manifest
+    assert root_manifest["files"]["optimized_glb"] == str(run_dir / "optimize" / "asset.glb")
+    assert root_manifest["files"]["thumbnail"] == str(run_dir / "previews" / "thumbnail.png")
+    assert root_manifest["files"]["turntable"] == str(run_dir / "previews" / "turntable.webm")
+    assert root_manifest["files"]["qa_report"] == str(run_dir / "reports" / "qa.json")
+    assert_package_local_manifest(web_manifest, "web")
+    assert_package_local_manifest(unity_manifest, "unity")
 
 
 def test_export_does_not_advertise_incomplete_profile_dirs(tmp_path: Path):
@@ -147,6 +162,8 @@ def test_export_does_not_complete_or_later_advertise_near_complete_profile_dirs(
 
 def test_qa_failure_clears_advertised_exports(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
+    review_html_path = run_dir / "reports" / "review.html"
+    assert "QA Passed" in review_html_path.read_text(encoding="utf-8")
     set_copied_spec_max_triangles(run_dir, 1)
 
     qa_result = runner.invoke(app, ["qa", str(run_dir)])
@@ -155,19 +172,27 @@ def test_qa_failure_clears_advertised_exports(tmp_path: Path):
     assert "QA passed: False" in qa_result.output
     root_manifest = read_json(run_dir / "manifest.json")
     qa_report = read_json(run_dir / "reports" / "qa.json")
-    web_manifest = read_json(run_dir / "exports" / "web" / "manifest.json")
-    web_qa_report = read_json(run_dir / "exports" / "web" / "qa.json")
+    review_html = review_html_path.read_text(encoding="utf-8")
     assert root_manifest["qa"]["passed"] is False
     assert root_manifest["files"]["exports"] == {}
     assert qa_report["passed"] is False
-    assert web_manifest["qa"]["passed"] is False
-    assert web_manifest["files"]["exports"] == {}
-    assert web_qa_report["passed"] is False
+    assert "QA Needs review" in review_html
+    assert "Triangle count" in review_html
+    assert not (run_dir / "exports" / "web").exists()
 
 
-def test_qa_recovery_resyncs_existing_export_package(tmp_path: Path):
-    _, run_dir = recover_failed_qa_run(tmp_path)
+def test_qa_pass_resyncs_existing_export_package_with_local_manifest(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+    web_manifest_path = run_dir / "exports" / "web" / "manifest.json"
+    web_manifest_path.write_text(
+        (run_dir / "manifest.json").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
 
+    qa_result = runner.invoke(app, ["qa", str(run_dir)])
+
+    assert qa_result.exit_code == 0, qa_result.output
+    assert "QA passed: True" in qa_result.output
     root_manifest = read_json(run_dir / "manifest.json")
     root_qa_report = read_json(run_dir / "reports" / "qa.json")
     web_manifest = read_json(run_dir / "exports" / "web" / "manifest.json")
@@ -179,9 +204,7 @@ def test_qa_recovery_resyncs_existing_export_package(tmp_path: Path):
     }
     assert root_qa_report["passed"] is True
     assert web_manifest["qa"]["passed"] is True
-    assert web_manifest["files"]["exports"] == {
-        "web": str(run_dir / "exports" / "web"),
-    }
+    assert_package_local_manifest(web_manifest, "web")
     assert web_qa_report["passed"] is True
 
 
@@ -249,11 +272,12 @@ def test_export_after_qa_recovery_syncs_old_and_new_export_packages(tmp_path: Pa
 
     assert export_result.exit_code == 0, export_result.output
     root_manifest = read_json(run_dir / "manifest.json")
-    web_manifest = read_json(run_dir / "exports" / "web" / "manifest.json")
     unity_manifest = read_json(run_dir / "exports" / "unity" / "manifest.json")
-    assert set(root_manifest["files"]["exports"]) == {"web", "unity"}
-    assert web_manifest == root_manifest
-    assert unity_manifest == root_manifest
+    assert root_manifest["files"]["exports"] == {
+        "unity": str(run_dir / "exports" / "unity"),
+    }
+    assert not (run_dir / "exports" / "web").exists()
+    assert_package_local_manifest(unity_manifest, "unity")
 
 
 def test_export_refuses_failed_qa_run(tmp_path: Path):

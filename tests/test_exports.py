@@ -13,7 +13,10 @@ def write_artifacts(run_dir: Path) -> None:
     (run_dir / "previews" / "thumbnail.png").write_bytes(b"png")
     (run_dir / "previews" / "turntable.webm").write_bytes(b"webm")
     (run_dir / "reports" / "qa.json").write_text("{}", encoding="utf-8")
-    (run_dir / "manifest.json").write_text('{"asset":{"id":"demo"}}', encoding="utf-8")
+    (run_dir / "manifest.json").write_text(
+        json.dumps({"asset": {"id": "demo"}, "files": {"optimized_glb": "root"}}),
+        encoding="utf-8",
+    )
 
 
 def test_exports_web_unity_and_unreal_profiles(tmp_path: Path):
@@ -27,13 +30,9 @@ def test_exports_web_unity_and_unreal_profiles(tmp_path: Path):
     assert set(results) == {ExportProfile.WEB, ExportProfile.UNITY, ExportProfile.UNREAL}
     for profile, export_dir in results.items():
         assert (export_dir / "asset.glb").read_bytes() == b"glTF-demo"
-        assert (export_dir / "manifest.json").exists()
+        assert not (export_dir / "manifest.json").exists()
         assert (export_dir / "thumbnail.png").exists()
         assert (export_dir / "turntable.webm").exists()
         assert (export_dir / "qa.json").exists()
         notes = (export_dir / "IMPORT_NOTES.md").read_text(encoding="utf-8")
         assert profile.value in notes
-    web_manifest = json.loads(
-        (results[ExportProfile.WEB] / "manifest.json").read_text(encoding="utf-8")
-    )
-    assert web_manifest["asset"]["id"] == "demo"

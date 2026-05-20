@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw
 
 from asset_factory.exports import export_profiles
 from asset_factory.images import OpenAIImageGenerator
-from asset_factory.manifest import read_manifest, write_manifest
+from asset_factory.manifest import read_manifest, write_manifest, write_package_manifest
 from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaThresholds
 from asset_factory.pipeline import generate_asset
 from asset_factory.qa import run_qa
@@ -108,6 +108,8 @@ def qa(run_dir: Path) -> None:
         manifest.files.exports = {}
     else:
         manifest.files.exports = _exports_from_package_dirs(complete_export_dirs)
+    review_html = _write_review_html(run_dir, manifest)
+    manifest.files.review_html = str(review_html)
     write_manifest(manifest_path, manifest)
 
     qa_report = run_dir / "reports" / "qa.json"
@@ -116,6 +118,11 @@ def qa(run_dir: Path) -> None:
         json.dumps(summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    if not summary.passed:
+        _remove_export_package_dirs(run_dir, complete_export_dirs)
+        typer.echo(f"QA passed: {summary.passed}")
+        return
+
     export_dirs = _export_package_dirs(
         run_dir,
         extra_dirs=complete_export_dirs,
@@ -153,7 +160,10 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
         run_dir,
         extra_dirs=[*complete_export_dirs, *outputs.values()],
     )
-    manifest.files.exports = _exports_from_package_dirs([*complete_export_dirs, *outputs.values()])
+    manifest.files.exports = _exports_from_package_dirs(
+        [*complete_export_dirs, *outputs.values()],
+        require_manifest=False,
+    )
     write_manifest(manifest_path, manifest)
     _sync_export_packages(
         manifest,
@@ -231,14 +241,20 @@ def _complete_export_package_dirs(run_dir: Path) -> list[Path]:
     return [export_dir for export_dir in export_dirs if _is_complete_export_package(export_dir)]
 
 
-def _exports_from_package_dirs(export_dirs: Iterable[Path]) -> dict[ExportProfile, str]:
+def _exports_from_package_dirs(
+    export_dirs: Iterable[Path],
+    *,
+    require_manifest: bool = True,
+) -> dict[ExportProfile, str]:
     exports: dict[ExportProfile, str] = {}
     for export_dir in export_dirs:
         try:
             profile = ExportProfile(export_dir.name)
         except ValueError:
             continue
-        if not _is_complete_export_package(export_dir):
+        if require_manifest and not _is_complete_export_package(export_dir):
+            continue
+        if not require_manifest and not _has_export_package_payload(export_dir):
             continue
         exports[profile] = str(export_dir)
     return exports
@@ -248,6 +264,14 @@ def _is_complete_export_package(export_dir: Path) -> bool:
     return all(
         (export_dir / required_file).is_file()
         for required_file in _REQUIRED_EXPORT_PACKAGE_FILES
+    )
+
+
+def _has_export_package_payload(export_dir: Path) -> bool:
+    return all(
+        (export_dir / required_file).is_file()
+        for required_file in _REQUIRED_EXPORT_PACKAGE_FILES
+        if required_file != "manifest.json"
     )
 
 
@@ -280,6 +304,33 @@ def _sync_export_packages(
         if not resolved_export_dir.is_dir():
             continue
 
-        write_manifest(resolved_export_dir / "manifest.json", manifest)
+        profile = ExportProfile(resolved_export_dir.name)
+        write_package_manifest(resolved_export_dir / "manifest.json", manifest, profile)
         if qa_report.exists():
             shutil.copy2(qa_report, resolved_export_dir / "qa.json")
+
+
+def _remove_export_package_dirs(run_dir: Path, export_dirs: Iterable[Path]) -> None:
+    exports_root = (run_dir / "exports").resolve()
+    for export_dir in export_dirs:
+        resolved_export_dir = export_dir.resolve()
+        if not _is_export_package_dir(resolved_export_dir, exports_root):
+            continue
+        if not _is_complete_export_package(resolved_export_dir):
+            continue
+        shutil.rmtree(resolved_export_dir)
+
+
+def _write_review_html(run_dir: Path, manifest: AssetManifest) -> Path:
+    from asset_factory.review import write_review_html
+
+    warnings = [*manifest.qa.blocking_failures, *manifest.qa.warnings]
+    return write_review_html(
+        run_dir,
+        asset_id=manifest.asset.id,
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=manifest.qa.passed,
+        warnings=warnings,
+    )
