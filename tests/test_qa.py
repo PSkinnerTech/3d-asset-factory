@@ -117,6 +117,30 @@ def write_box_with_invalid_base_color_texture_index(path: Path) -> None:
     mutate_glb_json(path, mutate)
 
 
+def write_box_with_valid_factor_and_invalid_base_color_texture_index(path: Path) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr["baseColorFactor"] = [0.78, 0.47, 0.31, 1.0]
+        pbr["baseColorTexture"] = {"index": 999}
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_valid_texture_and_base_color_factor(path: Path, factor: object) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr["baseColorFactor"] = factor
+        pbr["baseColorTexture"] = {"index": 0}
+        glb_json["textures"] = [{"source": 0}]
+        glb_json["images"] = [{"uri": "texture.png"}]
+
+    mutate_glb_json(path, mutate)
+
+
 def write_box_with_empty_base_color_texture_image(path: Path) -> None:
     write_box(path)
 
@@ -126,6 +150,35 @@ def write_box_with_empty_base_color_texture_image(path: Path) -> None:
         pbr["baseColorTexture"] = {"index": 0}
         glb_json["textures"] = [{"source": 0}]
         glb_json["images"] = [{}]
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_base_color_texture_data_uri(path: Path, uri: str) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr.pop("baseColorFactor", None)
+        pbr["baseColorTexture"] = {"index": 0}
+        glb_json["textures"] = [{"source": 0}]
+        glb_json["images"] = [{"uri": uri}]
+
+    mutate_glb_json(path, mutate)
+
+
+def write_box_with_zero_byte_base_color_texture_buffer_view(path: Path) -> None:
+    write_box(path)
+
+    def mutate(glb_json: dict) -> None:
+        pbr = glb_json["materials"][0].setdefault("pbrMetallicRoughness", {})
+        pbr.pop("baseColorFactor", None)
+        pbr["baseColorTexture"] = {"index": 0}
+        glb_json["textures"] = [{"source": 0}]
+        buffer_views = glb_json.setdefault("bufferViews", [])
+        image_buffer_view_index = len(buffer_views)
+        buffer_views.append({"buffer": 0, "byteOffset": 0, "byteLength": 0})
+        glb_json["images"] = [{"bufferView": image_buffer_view_index, "mimeType": "image/png"}]
 
     mutate_glb_json(path, mutate)
 
@@ -294,9 +347,65 @@ def test_qa_blocks_invalid_base_color_texture_index(tmp_path: Path):
     assert report.metrics["primitives_missing_base_color"] == 1
 
 
+def test_qa_blocks_valid_factor_with_invalid_base_color_texture_index(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_valid_factor_and_invalid_base_color_texture_index(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_valid_texture_with_out_of_range_base_color_factor(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_valid_texture_and_base_color_factor(glb_path, [-1, 2, 0.5, 1])
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
 def test_qa_blocks_empty_base_color_texture_image(tmp_path: Path):
     glb_path = tmp_path / "asset.glb"
     write_box_with_empty_base_color_texture_image(glb_path)
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_empty_base_color_texture_data_uri(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_base_color_texture_data_uri(glb_path, "data:image/png;base64,")
+
+    report = run_qa(make_spec(), glb_path)
+
+    assert report.passed is False
+    assert "Required material data is missing" not in report.blocking_failures
+    assert "Required base color data is missing" in report.blocking_failures
+    assert report.metrics["primitive_count"] == 1
+    assert report.metrics["primitives_missing_material"] == 0
+    assert report.metrics["primitives_missing_base_color"] == 1
+
+
+def test_qa_blocks_zero_byte_base_color_texture_buffer_view(tmp_path: Path):
+    glb_path = tmp_path / "asset.glb"
+    write_box_with_zero_byte_base_color_texture_buffer_view(glb_path)
 
     report = run_qa(make_spec(), glb_path)
 

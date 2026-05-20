@@ -75,19 +75,44 @@ def _has_valid_base_color_factor(pbr: dict[str, Any]) -> bool:
     )
 
 
+def _has_usable_image_uri(uri: Any) -> bool:
+    if not isinstance(uri, str):
+        return False
+
+    uri = uri.strip()
+    if not uri:
+        return False
+
+    if uri.lower().startswith("data:"):
+        _header, separator, payload = uri.partition(",")
+        return bool(separator and payload.strip())
+
+    return True
+
+
+def _has_positive_byte_length(buffer_view: Any) -> bool:
+    if not isinstance(buffer_view, dict):
+        return False
+
+    byte_length = buffer_view.get("byteLength")
+    return isinstance(byte_length, int) and not isinstance(byte_length, bool) and byte_length > 0
+
+
 def _has_usable_image_data(image: Any, glb_json: dict[str, Any]) -> bool:
     if not isinstance(image, dict):
         return False
 
-    uri = image.get("uri")
-    if isinstance(uri, str) and uri.strip():
+    if _has_usable_image_uri(image.get("uri")):
         return True
 
     mime_type = image.get("mimeType")
+    buffer_views = glb_json.get("bufferViews")
+    buffer_view_index = image.get("bufferView")
     return (
         isinstance(mime_type, str)
         and bool(mime_type.strip())
-        and _is_valid_index(image.get("bufferView"), glb_json.get("bufferViews"))
+        and _is_valid_index(buffer_view_index, buffer_views)
+        and _has_positive_byte_length(buffer_views[buffer_view_index])
     )
 
 
@@ -120,7 +145,17 @@ def _has_explicit_base_color(material: Any, glb_json: dict[str, Any]) -> bool:
     if not isinstance(pbr, dict):
         return False
 
-    return _has_valid_base_color_factor(pbr) or _has_valid_base_color_texture(pbr, glb_json)
+    has_base_color_factor = "baseColorFactor" in pbr
+    has_base_color_texture = "baseColorTexture" in pbr
+    if not has_base_color_factor and not has_base_color_texture:
+        return False
+
+    if has_base_color_factor and not _has_valid_base_color_factor(pbr):
+        return False
+    if has_base_color_texture and not _has_valid_base_color_texture(pbr, glb_json):
+        return False
+
+    return True
 
 
 def inspect_glb(path: Path) -> GlbMetrics:
