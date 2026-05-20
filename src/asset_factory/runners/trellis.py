@@ -5,6 +5,7 @@ import os
 import shlex
 import string
 import subprocess
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,11 +13,6 @@ from pathlib import Path
 from asset_factory.runners.base import RunnerRequest, RunnerResult
 
 _SUPPORTED_PLACEHOLDERS = frozenset({"image", "output", "resolution"})
-_PLACEHOLDER_SENTINELS = {
-    "image": "__TRELLIS_PLACEHOLDER_IMAGE__",
-    "output": "__TRELLIS_PLACEHOLDER_OUTPUT__",
-    "resolution": "__TRELLIS_PLACEHOLDER_RESOLUTION__",
-}
 
 
 @dataclass(frozen=True)
@@ -111,26 +107,34 @@ def _build_command_args(command_template: str, request: RunnerRequest) -> list[s
         "output": str(request.output_dir),
         "resolution": str(request.resolution),
     }
-    sentinel_command = _build_sentinel_command(command_template)
+    sentinel_command, placeholder_tokens = _build_sentinel_command(command_template)
     try:
         sentinel_args = shlex.split(sentinel_command)
     except ValueError as exc:
         raise ValueError(f"Invalid TRELLIS2_COMMAND shell syntax: {exc}") from exc
+    if not sentinel_args:
+        raise ValueError("TRELLIS2_COMMAND must include an executable")
 
     command_args: list[str] = []
     for arg in sentinel_args:
-        for placeholder, sentinel in _PLACEHOLDER_SENTINELS.items():
-            arg = arg.replace(sentinel, placeholder_values[placeholder])
+        for token, placeholder in placeholder_tokens.items():
+            arg = arg.replace(token, placeholder_values[placeholder])
         command_args.append(arg)
     return command_args
 
 
-def _build_sentinel_command(command_template: str) -> str:
+def _build_sentinel_command(command_template: str) -> tuple[str, dict[str, str]]:
     formatter = string.Formatter()
     parts: list[str] = []
+    placeholder_tokens: dict[str, str] = {}
     try:
         parsed_template = formatter.parse(command_template)
-        for literal_text, field_name, format_spec, conversion in parsed_template:
+        for index, (
+            literal_text,
+            field_name,
+            format_spec,
+            conversion,
+        ) in enumerate(parsed_template):
             parts.append(literal_text)
             if field_name is None:
                 continue
@@ -144,12 +148,14 @@ def _build_sentinel_command(command_template: str) -> str:
                     f"Unsupported format syntax for {{{field_name}}}; use only "
                     "{image}, {output}, or {resolution}"
                 )
-            parts.append(_PLACEHOLDER_SENTINELS[field_name])
+            token = f"__TRELLIS_PLACEHOLDER_{index}_{uuid.uuid4().hex}__"
+            placeholder_tokens[token] = field_name
+            parts.append(token)
     except ValueError as exc:
         if str(exc).startswith(("Unsupported placeholder", "Unsupported format syntax")):
             raise
         raise ValueError(f"Invalid TRELLIS2_COMMAND format: {exc}") from exc
-    return "".join(parts)
+    return "".join(parts), placeholder_tokens
 
 
 def _write_report(

@@ -118,6 +118,54 @@ def test_trellis_runner_writes_failure_report_for_missing_executable(tmp_path: P
     assert report["concept_image"] == str(image)
 
 
+def test_trellis_runner_writes_failure_report_for_whitespace_command_template(tmp_path: Path):
+    image = tmp_path / "concept.png"
+    image.write_bytes(b"png")
+    output_dir = tmp_path / "trellis"
+    runner = TrellisCommandRunner(command_template="   ")
+
+    with pytest.raises(RuntimeError, match="TRELLIS command failed; see"):
+        runner.run(RunnerRequest(concept_image=image, output_dir=output_dir))
+
+    report = json.loads((output_dir / "raw_report.json").read_text(encoding="utf-8"))
+    assert report["success"] is False
+    assert report["error_type"] == "ValueError"
+    assert report["error_message"] == "TRELLIS2_COMMAND must include an executable"
+    assert report["command_args"] is None
+
+
+def test_trellis_runner_preserves_literal_sentinel_strings(tmp_path: Path, monkeypatch):
+    script = tmp_path / "fake_trellis.py"
+    script.write_text(
+        """
+from pathlib import Path
+import json
+import sys
+
+out = Path(sys.argv[3])
+out.mkdir(parents=True, exist_ok=True)
+(out / "argv.json").write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
+(out / "raw.glb").write_bytes(b"glTF-fake")
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "TRELLIS2_COMMAND",
+        f"{sys.executable} {script} __TRELLIS_PLACEHOLDER_IMAGE__ {{image}} {{output}}",
+    )
+    image = tmp_path / "concept.png"
+    image.write_bytes(b"png")
+    output_dir = tmp_path / "trellis"
+
+    TrellisCommandRunner.from_env().run(RunnerRequest(concept_image=image, output_dir=output_dir))
+
+    assert json.loads((output_dir / "argv.json").read_text(encoding="utf-8")) == [
+        "__TRELLIS_PLACEHOLDER_IMAGE__",
+        str(image),
+        str(output_dir),
+    ]
+
+
 @pytest.mark.parametrize(
     ("template", "expected_message"),
     [
