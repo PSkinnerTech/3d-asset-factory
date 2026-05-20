@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -84,6 +85,7 @@ def qa(run_dir: Path) -> None:
     manifest_path = run_dir / "manifest.json"
     manifest = read_manifest(manifest_path)
     spec = _spec_from_manifest(run_dir, manifest_path)
+    previous_export_dirs = _export_package_dirs(run_dir, manifest)
 
     summary = run_qa(spec, run_dir / "optimize" / "asset.glb")
     manifest.qa = summary
@@ -97,7 +99,11 @@ def qa(run_dir: Path) -> None:
         json.dumps(summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _sync_export_packages(manifest, qa_report)
+    _sync_export_packages(
+        manifest,
+        qa_report,
+        export_dirs=previous_export_dirs if not summary.passed else None,
+    )
 
     typer.echo(f"QA passed: {summary.passed}")
 
@@ -105,9 +111,15 @@ def qa(run_dir: Path) -> None:
 @app.command()
 def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
     """Rebuild an export profile from an existing run directory."""
-    outputs = export_profiles(run_dir, [profile])
     manifest_path = run_dir / "manifest.json"
     manifest = read_manifest(manifest_path)
+    if manifest.qa.passed is False:
+        raise typer.BadParameter(
+            "Cannot export run because QA has not passed",
+            param_hint="run_dir",
+        )
+
+    outputs = export_profiles(run_dir, [profile])
     manifest.files.exports.update(
         {export_profile: str(path) for export_profile, path in outputs.items()}
     )
@@ -148,9 +160,29 @@ def _spec_from_manifest(run_dir: Path, manifest_path: Path) -> AssetSpec:
     )
 
 
-def _sync_export_packages(manifest: AssetManifest, qa_report: Path) -> None:
-    for export_path in manifest.files.exports.values():
-        export_dir = Path(export_path)
+def _export_package_dirs(run_dir: Path, manifest: AssetManifest) -> list[Path]:
+    export_dirs = [Path(export_path) for export_path in manifest.files.exports.values()]
+    exports_root = run_dir / "exports"
+    if exports_root.is_dir():
+        export_dirs.extend(path for path in exports_root.iterdir() if path.is_dir())
+
+    deduped: dict[Path, None] = {}
+    for export_dir in export_dirs:
+        deduped[export_dir.resolve()] = None
+    return list(deduped)
+
+
+def _sync_export_packages(
+    manifest: AssetManifest,
+    qa_report: Path,
+    export_dirs: Iterable[Path] | None = None,
+) -> None:
+    if export_dirs is None:
+        package_dirs = (Path(export_path) for export_path in manifest.files.exports.values())
+    else:
+        package_dirs = export_dirs
+
+    for export_dir in package_dirs:
         if not export_dir.is_dir():
             continue
 

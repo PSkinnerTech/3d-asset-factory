@@ -110,6 +110,47 @@ def test_qa_failure_clears_advertised_exports(tmp_path: Path):
     assert "QA passed: False" in qa_result.output
     root_manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     qa_report = json.loads((run_dir / "reports" / "qa.json").read_text(encoding="utf-8"))
+    web_manifest = json.loads(
+        (run_dir / "exports" / "web" / "manifest.json").read_text(encoding="utf-8")
+    )
+    web_qa_report = json.loads(
+        (run_dir / "exports" / "web" / "qa.json").read_text(encoding="utf-8")
+    )
     assert root_manifest["qa"]["passed"] is False
     assert root_manifest["files"]["exports"] == {}
     assert qa_report["passed"] is False
+    assert web_manifest["qa"]["passed"] is False
+    assert web_manifest["files"]["exports"] == {}
+    assert web_qa_report["passed"] is False
+
+
+def test_export_refuses_failed_qa_run(tmp_path: Path):
+    spec_path = write_spec(tmp_path / "asset.yaml")
+    runner = CliRunner()
+
+    generate_result = runner.invoke(
+        app,
+        ["generate", str(spec_path), "--root-dir", str(tmp_path), "--runner", "mock"],
+    )
+    assert generate_result.exit_code == 0, generate_result.output
+    run_dir = Path(generate_result.output.strip().split("Generated run: ", maxsplit=1)[1])
+    spec_path.unlink()
+    copied_spec = run_dir / "input" / "asset.yaml"
+    failing_spec = copied_spec.read_text(encoding="utf-8").replace(
+        "max_triangles: 150000",
+        "max_triangles: 1",
+    )
+    copied_spec.write_text(failing_spec, encoding="utf-8")
+
+    qa_result = runner.invoke(app, ["qa", str(run_dir)])
+    assert qa_result.exit_code == 0, qa_result.output
+    assert "QA passed: False" in qa_result.output
+
+    export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
+
+    root_manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert export_result.exit_code != 0
+    assert "Cannot export" in export_result.output
+    assert "QA" in export_result.output
+    assert root_manifest["files"]["exports"] == {}
+    assert not (run_dir / "exports" / "unity").exists()
