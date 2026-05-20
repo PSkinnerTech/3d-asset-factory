@@ -189,6 +189,7 @@ def build_review_html(
   </script>
   <script type="module">
     import * as THREE from 'three';
+    import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
     import {{ GLTFLoader }} from 'three/addons/loaders/GLTFLoader.js';
 
     const viewer = document.getElementById('viewer');
@@ -209,17 +210,42 @@ def build_review_html(
     renderer.setSize(viewer.clientWidth, viewer.clientHeight);
     viewer.appendChild(renderer.domElement);
 
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
     scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 3));
     const keyLight = new THREE.DirectionalLight(0xffffff, 2);
     keyLight.position.set(3, 4, 2);
     scene.add(keyLight);
 
+    function frameObject(object) {{
+      const box = new THREE.Box3().setFromObject(object);
+      const center = new THREE.Vector3();
+      const size = new THREE.Vector3();
+      box.getCenter(center);
+      box.getSize(size);
+
+      const maxSize = Math.max(size.x, size.y, size.z, 1);
+      const fitDistance = maxSize / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+      const viewDirection = new THREE.Vector3(1, 0.8, 1).normalize();
+
+      camera.position.copy(center).add(viewDirection.multiplyScalar(fitDistance * 1.6));
+      camera.near = Math.max(fitDistance / 100, 0.001);
+      camera.far = Math.max(fitDistance * 100, maxSize * 10);
+      camera.lookAt(center);
+      camera.updateProjectionMatrix();
+
+      controls.target.copy(center);
+      controls.update();
+    }}
+
     const loader = new GLTFLoader();
     loader.load({glb_url}, (gltf) => {{
       viewerStatus.hidden = true;
       scene.add(gltf.scene);
+      frameObject(gltf.scene);
       renderer.setAnimationLoop(() => {{
-        gltf.scene.rotation.y += 0.01;
+        controls.update();
         renderer.render(scene, camera);
       }});
     }}, undefined, () => {{

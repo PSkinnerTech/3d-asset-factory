@@ -25,6 +25,29 @@ def test_build_review_html_contains_manifest_and_viewer():
     assert "import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';" in html
 
 
+def test_build_review_html_frames_loaded_model_in_preview():
+    html = build_review_html(
+        asset_id="chloroplast_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=[],
+    )
+
+    assert "function frameObject(object)" in html
+    assert "new THREE.Box3().setFromObject(object)" in html
+    assert "box.getCenter(center)" in html
+    assert "box.getSize(size)" in html
+    assert "camera.lookAt(center)" in html
+    assert "camera.near" in html
+    assert "camera.far" in html
+    assert "import { OrbitControls } from 'three/addons/controls/OrbitControls.js';" in html
+    assert "controls.target.copy(center)" in html
+    assert "controls.update()" in html
+    assert "frameObject(gltf.scene)" in html
+
+
 def test_build_review_html_escapes_visible_html_content():
     html = build_review_html(
         asset_id='cell<&>"',
