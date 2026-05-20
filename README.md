@@ -223,3 +223,7 @@ python -m asset_factory qa runs/chloroplast_001/<timestamp>
 python -m asset_factory export runs/chloroplast_001/<timestamp> --profile web
 python -m asset_factory review runs/chloroplast_001/<timestamp>
 ```
+
+## License
+
+MIT © 2026 PSkinnerTech.
