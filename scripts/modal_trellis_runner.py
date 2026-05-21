@@ -138,11 +138,16 @@ def invoke_modal(args: RunnerArgs, image_bytes: bytes) -> object:
     except ImportError as exc:
         raise RunnerError(
             "the 'modal' package is required on the controller; install with "
-            "`python -m pip install modal` and run `modal token new`."
+            "`python -m pip install 'modal>=0.64'` and run `modal token new`."
         ) from exc
 
     try:
         fn = modal.Function.from_name(args.app_name, args.function_name)
+    except AttributeError as exc:
+        raise RunnerError(
+            "this Modal SDK is too old: `modal.Function.from_name` is unavailable. "
+            "Upgrade with `python -m pip install --upgrade 'modal>=0.64'`."
+        ) from exc
     except Exception as exc:
         raise RunnerError(
             f"could not look up Modal function {args.app_name}::{args.function_name}: {exc}. "

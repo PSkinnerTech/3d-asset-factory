@@ -1,22 +1,21 @@
-"""Modal app that exposes TRELLIS.2 image-to-3D as a remote function.
+"""Modal app that exposes microsoft/TRELLIS.2 image-to-3D as a remote function.
 
-This file is a **template**. The local controller-side runner at
-``scripts/modal_trellis_runner.py`` is production-quality, but the GPU-side
-container build and the TRELLIS.2 entrypoint can vary by upstream commit and
-install. Replace the values marked ``TODO`` with the ones that match your
-TRELLIS.2 install.
+The local controller-side runner at ``scripts/modal_trellis_runner.py`` calls
+``trellis_generate.remote(image_bytes, resolution)`` on the deployed Modal
+function and writes the returned GLB bytes to ``{output_dir}/raw.glb``.
 
 Deploy with::
 
     modal deploy infra/modal_trellis.py
 
-Once deployed, the controller-side wrapper at ``scripts/modal_trellis_runner.py``
-will discover this function via ``modal.Function.from_name(APP_NAME, FUNCTION_NAME)``
-and invoke ``trellis_generate.remote(image_bytes, resolution)``.
+The function MUST return raw GLB bytes. The controller validates the ``glTF``
+magic header before persisting.
 
-The function MUST return the raw GLB bytes. The controller writes them to
-``{output_dir}/raw.glb`` so the rest of the 3D Asset Factory pipeline picks the
-file up unchanged.
+Upstream pinned: https://github.com/microsoft/TRELLIS.2 (TRELLIS.2-4B weights
+at https://huggingface.co/microsoft/TRELLIS.2-4B). Per the upstream README the
+project targets PyTorch 2.6.0 on CUDA 12.4, requires a Linux NVIDIA GPU with at
+least 24 GB VRAM (verified on A100/H100), and installs through ``setup.sh``
+rather than a ``requirements.txt``.
 """
 
 from __future__ import annotations
@@ -30,56 +29,121 @@ import modal
 APP_NAME = "trellis2-inference"
 FUNCTION_NAME = "trellis_generate"
 
-# TODO: pick the smallest GPU class with enough VRAM for TRELLIS.2. A10G is
-# usually the cheapest viable option; A100-80GB / H100 are faster.
-GPU = "A10G"
+# Default GPU. TRELLIS.2 README states A100/H100 are the verified configurations
+# and that the 4B model needs >= 24 GB VRAM. A10G has 24 GB and works for the
+# 512-1024 voxel range but is slower; bump to "A100-80GB" or "H100" for the
+# 1536^3 resolution path. Override at deploy time by editing this constant.
+GPU = "A100-80GB"
 
-# TODO: pin to the CUDA + Python versions that the TRELLIS.2 upstream tests
-# against. Rebuilding the image is the slow part of iteration, so pinning here
-# pays off.
+# CUDA 12.4 + Python 3.10 to match upstream conda env exactly. setup.sh creates
+# a `trellis2` env on Python 3.10 with PyTorch 2.6.0 + CUDA 12.4 wheels.
 BASE_IMAGE = "nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04"
-PYTHON_VERSION = "3.11"
+PYTHON_VERSION = "3.10"
 
-# TODO: replace with the upstream TRELLIS.2 repo URL and the install command
-# that pulls in its dependencies. The block below is a placeholder and will not
-# actually install a working TRELLIS.2 environment as-is.
-TRELLIS_REPO_URL = "https://github.com/microsoft/TRELLIS.git"
+# Pinned upstream. Use a commit SHA in production once you've validated one.
+TRELLIS_REPO_URL = "https://github.com/microsoft/TRELLIS.2.git"
 TRELLIS_INSTALL_DIR = "/opt/trellis2"
+TRELLIS_MODEL_ID = "microsoft/TRELLIS.2-4B"
 
-# Per-call timeout. Cold starts plus inference for a single asset typically
-# fit comfortably in 15 minutes; raise this if you target very high resolutions.
-FUNCTION_TIMEOUT_SECONDS = 15 * 60
+# Per-call timeout. Per the upstream README on an H100:
+#   512^3  ~3s, 1024^3 ~17s, 1536^3 ~60s (inference only).
+# Cold start adds checkpoint download (~16 GB) on first invocation per worker;
+# the volume cache keeps subsequent starts fast. 20 minutes covers cold start
+# and the worst-case 1536^3 path with margin.
+FUNCTION_TIMEOUT_SECONDS = 20 * 60
 
 # --- Image build ------------------------------------------------------------
+#
+# We deliberately do not run TRELLIS.2's ``setup.sh --new-env`` because that
+# spins up a conda environment and we are already inside a controlled image.
+# Instead we replicate what ``setup.sh --basic --flash-attn --nvdiffrast
+# --nvdiffrec --cumesh --o-voxel --flexgemm`` does, against the system Python
+# Modal provides via ``add_python``.
 
 image = (
     modal.Image.from_registry(BASE_IMAGE, add_python=PYTHON_VERSION)
-    .apt_install("git", "ffmpeg", "libgl1", "libglib2.0-0")
-    # TODO: pin the full TRELLIS.2 dependency set. The exact list depends on
-    # the upstream commit you target. Start from their requirements file.
-    .pip_install(
-        "torch==2.4.0",
-        "torchvision==0.19.0",
-        "numpy>=1.26",
-        "pillow>=10.0",
-        "trimesh>=4.4",
+    .apt_install(
+        "git",
+        "build-essential",
+        "ninja-build",
+        "libjpeg-dev",
+        "libgl1",
+        "libglib2.0-0",
+        "ffmpeg",
     )
+    # Pinned to the CUDA 12.4 wheels TRELLIS.2's setup.sh selects on NVIDIA.
+    .pip_install(
+        "torch==2.6.0",
+        "torchvision==0.21.0",
+        extra_index_url="https://download.pytorch.org/whl/cu124",
+    )
+    # The "--basic" set from upstream setup.sh, with pillow-simd dropped (it
+    # requires libjpeg-turbo headers and conflicts with system pillow on slim
+    # images; standard pillow is fine for our single image-load path).
+    .pip_install(
+        "imageio>=2.35",
+        "imageio-ffmpeg>=0.5",
+        "tqdm",
+        "easydict",
+        "opencv-python-headless",
+        "ninja",
+        "trimesh>=4.4",
+        "transformers",
+        "tensorboard",
+        "pandas",
+        "lpips",
+        "zstandard",
+        "kornia",
+        "timm",
+        "huggingface_hub",
+        # utils3d pinned to the same commit setup.sh uses upstream.
+        "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8",
+    )
+    # flash-attn must compile against the installed torch; --no-build-isolation
+    # ensures it sees the torch we just installed.
+    .pip_install("flash-attn==2.7.3", extra_options="--no-build-isolation")
+    # Clone TRELLIS.2 with submodules; o-voxel ships inside the repo and is
+    # pip-installed below.
     .run_commands(
-        f"git clone {TRELLIS_REPO_URL} {TRELLIS_INSTALL_DIR}",
-        # TODO: replace with the upstream's actual install command. Some
-        # forks expose a `pip install -e .` target; others ship a setup.sh.
-        f"pip install -e {TRELLIS_INSTALL_DIR}",
+        f"git clone --recursive {TRELLIS_REPO_URL} {TRELLIS_INSTALL_DIR}",
+        # nvdiffrast / nvdiffrec / CuMesh / FlexGEMM — the CUDA extension set
+        # from setup.sh. Each needs --no-build-isolation so it links against
+        # the torch we already installed.
+        "git clone --branch v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/nvdiffrast"
+        " && pip install --no-build-isolation /tmp/nvdiffrast",
+        "git clone --branch renderutils https://github.com/JeffreyXiang/nvdiffrec.git"
+        " /tmp/nvdiffrec && pip install --no-build-isolation /tmp/nvdiffrec",
+        "git clone --recursive https://github.com/JeffreyXiang/CuMesh.git /tmp/cumesh"
+        " && pip install --no-build-isolation /tmp/cumesh",
+        "git clone --recursive https://github.com/JeffreyXiang/FlexGEMM.git /tmp/flexgemm"
+        " && pip install --no-build-isolation /tmp/flexgemm",
+        f"pip install --no-build-isolation {TRELLIS_INSTALL_DIR}/o-voxel",
+    )
+    .env(
+        {
+            # OpenEXR support is required by trellis2.utils.render_utils, even
+            # though we do not render videos in this entrypoint, because the
+            # import chain pulls it in.
+            "OPENCV_IO_ENABLE_OPENEXR": "1",
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+            # Send the HF download cache to the persisted volume so we only
+            # pay the ~16 GB download once per workspace.
+            "HF_HOME": "/weights/hf-cache",
+            "HUGGINGFACE_HUB_CACHE": "/weights/hf-cache",
+            "CUDA_HOME": "/usr/local/cuda",
+        }
     )
 )
 
-# Persisted weights volume - mounted at /weights inside the container. Caching
-# the downloaded TRELLIS.2 checkpoints here keeps cold starts cheap.
+# Persisted weights volume — mounted at /weights inside the container. Caches
+# the Hugging Face checkpoint and any other large model artifacts.
 weights_volume = modal.Volume.from_name("trellis2-weights", create_if_missing=True)
 
-# Optional secret holding HF_TOKEN if the upstream weights live behind a
-# Hugging Face gated repo. Create with:
+# Hugging Face secret. Required if your workspace has not accepted the model
+# license yet, or if you want to pull a gated revision. Create with:
 #   modal secret create huggingface HF_TOKEN=hf_your_token_here
-# Remove this secret from the function decorator below if you do not need it.
+# The TRELLIS.2-4B repo is currently public, so this is optional but
+# recommended to avoid surprises if upstream gates a future revision.
 secrets = [modal.Secret.from_name("huggingface")]
 
 app = modal.App(APP_NAME)
@@ -93,18 +157,21 @@ app = modal.App(APP_NAME)
     timeout=FUNCTION_TIMEOUT_SECONDS,
 )
 def trellis_generate(image_bytes: bytes, resolution: int = 1024) -> bytes:
-    """Generate a GLB from a concept image using TRELLIS.2.
+    """Generate a GLB from a concept image using microsoft/TRELLIS.2-4B.
 
     Inputs:
         image_bytes: Raw bytes of the concept PNG / JPEG generated locally.
-        resolution: Hint for the output resolution. Upstream TRELLIS.2 may
-            interpret this differently across versions; keep it advisory.
+        resolution: Advisory hint kept for parity with ``TRELLIS2_COMMAND``.
+            The upstream pipeline's ``run`` method does not currently take a
+            resolution argument; the value is validated and logged. Plug it
+            into ``pipeline.run`` here if a future TRELLIS.2 revision adds
+            the parameter.
 
     Returns:
         The GLB file as raw bytes. The controller writes them to
-        ``{output_dir}/raw.glb`` so the rest of the pipeline picks the file up
-        unchanged.
+        ``{output_dir}/raw.glb``.
     """
+    import io
     import os
     import pathlib
     import tempfile
@@ -116,47 +183,62 @@ def trellis_generate(image_bytes: bytes, resolution: int = 1024) -> bytes:
     if not isinstance(resolution, int) or resolution <= 0:
         raise ValueError(f"resolution must be a positive integer, got {resolution!r}")
 
-    work = pathlib.Path(tempfile.mkdtemp(prefix="trellis2_"))
-    in_path = work / "concept.png"
-    out_path = work / "raw.glb"
-    in_path.write_bytes(bytes(image_bytes))
-
-    # Point the upstream code at the volume-cached weights.
-    os.environ.setdefault("TRELLIS_WEIGHTS", "/weights")
+    # These must be set before importing cv2 / trellis2.* because cv2 freezes
+    # OpenEXR support at import time. They are also baked into the image via
+    # .env(...) but we re-export defensively for `modal run` invocations.
+    os.environ.setdefault("OPENCV_IO_ENABLE_OPENEXR", "1")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ.setdefault("HF_HOME", "/weights/hf-cache")
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", "/weights/hf-cache")
 
-    # TODO: replace this block with the real TRELLIS.2 entrypoint for your
-    # install. The import path and function signature below are placeholders.
-    # Common shapes you may see upstream:
-    #
-    #     from trellis2.pipelines import ImageTo3DPipeline
-    #     pipeline = ImageTo3DPipeline.from_pretrained("/weights/...")
-    #     pipeline.run(str(in_path), str(out_path), resolution=resolution)
-    #
-    # or a CLI:
-    #
-    #     subprocess.run(
-    #         ["python", "/opt/trellis2/run.py",
-    #          "--image", str(in_path),
-    #          "--output", str(out_path),
-    #          "--resolution", str(resolution)],
-    #         check=True,
-    #     )
-    from trellis2.inference import image_to_glb  # type: ignore[import-not-found]
+    import o_voxel  # type: ignore[import-not-found]
+    from PIL import Image
+    from trellis2.pipelines import Trellis2ImageTo3DPipeline  # type: ignore[import-not-found]
 
-    image_to_glb(str(in_path), str(out_path), resolution=resolution)
+    work = pathlib.Path(tempfile.mkdtemp(prefix="trellis2_"))
+    out_path = work / "raw.glb"
+
+    pil_image = Image.open(io.BytesIO(bytes(image_bytes))).convert("RGBA")
+
+    pipeline = Trellis2ImageTo3DPipeline.from_pretrained(TRELLIS_MODEL_ID)
+    pipeline.cuda()
+
+    # Upstream example.py: ``mesh = pipeline.run(image)[0]; mesh.simplify(...)``
+    mesh = pipeline.run(pil_image)[0]
+    # nvdiffrast face limit per upstream comment in example.py.
+    mesh.simplify(16777216)
+
+    glb = o_voxel.postprocess.to_glb(
+        vertices=mesh.vertices,
+        faces=mesh.faces,
+        attr_volume=mesh.attrs,
+        coords=mesh.coords,
+        attr_layout=mesh.layout,
+        voxel_size=mesh.voxel_size,
+        aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
+        decimation_target=1_000_000,
+        texture_size=4096,
+        remesh=True,
+        remesh_band=1,
+        remesh_project=0,
+        verbose=True,
+    )
+    glb.export(str(out_path), extension_webp=True)
 
     if not out_path.exists() or out_path.stat().st_size == 0:
         raise RuntimeError(
-            f"TRELLIS.2 did not produce a GLB at {out_path}; check the install + entrypoint."
+            f"TRELLIS.2 did not produce a GLB at {out_path}; check the upstream pipeline."
         )
+
+    # Persist any newly cached HF artifacts so the next cold start reuses them.
+    weights_volume.commit()
 
     return out_path.read_bytes()
 
 
 @app.local_entrypoint()
 def smoke(image_path: str, output_path: str = "raw.glb", resolution: int = 1024) -> None:
-    """`modal run infra/modal_trellis.py::smoke --image-path concept.png`.
+    """``modal run infra/modal_trellis.py::smoke --image-path concept.png``.
 
     Useful for isolating GPU-side bugs from controller-side bugs.
     """

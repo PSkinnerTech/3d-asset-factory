@@ -236,3 +236,44 @@ def test_invoke_modal_reports_missing_dependency(concept_image, tmp_path: Path, 
     )
     with pytest.raises(runner.RunnerError, match="'modal' package"):
         runner.invoke_modal(args, b"image-bytes")
+
+
+def test_invoke_modal_reports_old_sdk(concept_image, tmp_path: Path, monkeypatch):
+    """An older Modal SDK without ``Function.from_name`` should produce a clear message."""
+    import types
+
+    fake_modal = types.SimpleNamespace(Function=types.SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "modal", fake_modal)
+
+    args = runner.RunnerArgs(
+        image_path=concept_image,
+        output_dir=tmp_path / "out",
+        resolution=1024,
+        app_name="a",
+        function_name="f",
+    )
+    with pytest.raises(runner.RunnerError, match="Modal SDK is too old"):
+        runner.invoke_modal(args, b"image-bytes")
+
+
+def test_invoke_modal_wraps_lookup_failure(concept_image, tmp_path: Path, monkeypatch):
+    """Errors from ``Function.from_name`` are surfaced as RunnerError with deploy hint."""
+    import types
+
+    class _FromName:
+        @staticmethod
+        def from_name(_app, _fn):
+            raise RuntimeError("not found in workspace")
+
+    fake_modal = types.SimpleNamespace(Function=_FromName)
+    monkeypatch.setitem(sys.modules, "modal", fake_modal)
+
+    args = runner.RunnerArgs(
+        image_path=concept_image,
+        output_dir=tmp_path / "out",
+        resolution=1024,
+        app_name="a",
+        function_name="f",
+    )
+    with pytest.raises(runner.RunnerError, match="modal deploy"):
+        runner.invoke_modal(args, b"image-bytes")
