@@ -22,11 +22,14 @@ export packages.
 
 - `modal deploy infra/modal_trellis.py` succeeds and `modal app list` shows
   `trellis2-inference` as deployed.
-- `modal run infra/modal_trellis.py::smoke --image-path <concept.png>
+- Ephemeral GPU smoke:
+  `modal run infra/modal_trellis.py::smoke --image-path <concept.png>
   --output-path /tmp/raw.glb` writes a non-empty GLB whose first 4 bytes are
-  `glTF`.
-- `python scripts/modal_trellis_runner.py <concept.png> <out_dir> 1024` writes
-  `out_dir/raw.glb` from the laptop with no Modal SDK errors.
+  `glTF`. This proves the Modal image, TRELLIS.2 imports, and function body.
+- Deployed-function smoke:
+  `python scripts/modal_trellis_runner.py <concept.png> <out_dir> 1024` writes
+  `out_dir/raw.glb` from the laptop with no Modal SDK errors. This proves the
+  deployed app lookup path used by `TRELLIS2_COMMAND`.
 - `python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml
   --runner trellis` with `TRELLIS2_COMMAND` pointed at
   `scripts/modal_trellis_runner.py` completes through optimize, QA, review,
@@ -202,10 +205,10 @@ What to expect on the first deploy:
   near-instant.
 - **No GPU is charged during build.** Modal builds on its own infrastructure.
 
-Tail logs in another terminal if you want a live view:
+Follow logs in another terminal if you want a live view:
 
 ```bash
-modal app logs trellis2-inference
+modal app logs trellis2-inference -f
 ```
 
 When the deploy returns, confirm:
@@ -214,11 +217,16 @@ When the deploy returns, confirm:
 modal app list | grep trellis2-inference
 ```
 
-## 8. Run the Modal smoke test before the full pipeline
+## 8. Run the ephemeral Modal GPU smoke test
 
-This is the most important step. It isolates Modal-side problems from
-controller-side problems. The repo ships an `@app.local_entrypoint()` named
-`smoke` for exactly this.
+This is the most important first GPU check. It isolates image-build,
+dependency, upstream TRELLIS.2 API, and function-body problems from
+controller-side problems.
+
+Important nuance: `modal run` creates an ephemeral app for the local entrypoint.
+Passing this step proves the Modal function can run on a GPU, but it does **not**
+prove the deployed app lookup used by `modal.Function.from_name(...)`. Step 9
+proves that deployed-function path.
 
 ```bash
 # 8.1 — get any small RGBA-ish PNG. The chloroplast concept output from a
@@ -228,7 +236,7 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml \
 # locate the concept.png that mock produced under
 # runs/chloroplast_001/<timestamp>/image/concept.png
 
-# 8.2 — run the bundled smoke entrypoint against the deployed function
+# 8.2 — run the bundled smoke entrypoint against the app definition
 modal run infra/modal_trellis.py::smoke \
   --image-path runs/chloroplast_001/<timestamp>/image/concept.png \
   --output-path /tmp/raw.glb \
@@ -255,12 +263,22 @@ Anything else — `head -c 4` printing nothing, an HTML error page, a JSON
 payload, a zero-byte file — means the GPU side is wrong and the controller
 will fail the same way. Fix Modal before moving to step 9.
 
+Passing this step means the GPU-side implementation is viable. The live
+integration is still not done until the deployed-function smoke in step 9 also
+passes.
+
 ## 9. Run end-to-end through `scripts/modal_trellis_runner.py`
 
-Once the smoke test passes:
+Once the ephemeral GPU smoke test passes, exercise the deployed app by name.
+This is the first test that uses the same lookup path as the pipeline:
+`modal.Function.from_name("trellis2-inference", "trellis_generate")`.
+
+If step 8 passed but this step fails, focus on deployment, Modal workspace /
+environment selection, app name, or function name rather than TRELLIS.2 itself.
 
 ```bash
-# 9.1 — sanity-check the runner directly, outside the asset-factory pipeline
+# 9.1 — deployed-function smoke through the controller runner,
+# outside the asset-factory pipeline
 mkdir -p /tmp/runner_out
 python scripts/modal_trellis_runner.py \
   runs/chloroplast_001/<timestamp>/image/concept.png \
@@ -441,9 +459,11 @@ the upstream `Trellis2ImageTo3DPipeline` API changed (see decision 12.1).
 - Function timeout default is `FUNCTION_TIMEOUT_SECONDS = 20 * 60`. Bump it
   in `infra/modal_trellis.py` if you target 1536³ on a slower GPU.
 - First call per worker downloads ~16 GB into the volume. Expect 5–10 min.
-- For predictable latency, add `min_containers=1` to the `@app.function(...)`
-  decorator. This keeps a warm container at all times; you pay idle container
-  time but not idle GPU time.
+- For predictable latency after the smoke-test phase, consider
+  `scaledown_window` or `min_containers=1` on the `@app.function(...)`
+  decorator. Cost this before enabling it: warm idle containers can still bill
+  for reserved resources such as GPU reservation or residual memory. Do not
+  leave an A100/H100 warm pool enabled casually.
 
 ## 12. Decision points
 
@@ -475,11 +495,13 @@ test will fail. Options, in order of preference:
 The default GPU is `A100-80GB` because it covers the full 512³–1536³ range.
 For early iteration, cheaper is better:
 
-- Edit `GPU = "A100-80GB"` to `GPU = "A10G"` in `infra/modal_trellis.py`.
-  A10G has 24 GB VRAM, which is the upstream minimum and fine for 512³–1024³.
+- Edit `GPU = "A100-80GB"` to `GPU = "A10"` in `infra/modal_trellis.py`.
+  A10 has 24 GB VRAM, which is the upstream minimum and fine for 512³–1024³.
+  Older Modal examples may mention `A10G`; prefer the current documented value
+  unless your Modal CLI explicitly accepts the older alias.
 - Redeploy. The image cache is reused; only the GPU attachment changes.
-- Cost the smoke run with `modal app stats trellis2-inference` after a few
-  calls before deciding to stay on A10G or move back up.
+- Cost the smoke run from the Modal dashboard or billing/usage page after a few
+  calls before deciding to stay on A10 or move back up.
 
 ### 12.3 Build time is unacceptable
 
