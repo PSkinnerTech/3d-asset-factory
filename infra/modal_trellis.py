@@ -100,8 +100,20 @@ image = (
         "git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8",
     )
     # flash-attn must compile against the installed torch; --no-build-isolation
-    # ensures it sees the torch we just installed.
+    # ensures it sees the torch we just installed. Its setup metadata imports
+    # psutil under no-build-isolation, so psutil must exist before this layer.
+    .pip_install("psutil")
     .pip_install("flash-attn==2.7.3", extra_options="--no-build-isolation")
+    .env(
+        {
+            # Modal image builds do not expose a GPU, so PyTorch cannot infer
+            # extension target architectures. Cover the Modal GPU classes we
+            # expect to use: A100, A10, L4/Ada, and H100.
+            "TORCH_CUDA_ARCH_LIST": "8.0;8.6;8.9;9.0",
+            "CC": "/usr/bin/gcc",
+            "CXX": "/usr/bin/g++",
+        }
+    )
     # Clone TRELLIS.2 with submodules; o-voxel ships inside the repo and is
     # pip-installed below.
     .run_commands(
@@ -131,6 +143,7 @@ image = (
             "HF_HOME": "/weights/hf-cache",
             "HUGGINGFACE_HUB_CACHE": "/weights/hf-cache",
             "CUDA_HOME": "/usr/local/cuda",
+            "PYTHONPATH": TRELLIS_INSTALL_DIR,
         }
     )
 )
