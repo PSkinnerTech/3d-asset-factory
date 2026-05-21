@@ -131,6 +131,10 @@ image = (
         " && pip install --no-build-isolation /tmp/flexgemm",
         f"pip install --no-build-isolation {TRELLIS_INSTALL_DIR}/o-voxel",
     )
+    # TRELLIS.2's DINOv3 feature extractor currently reaches into
+    # DINOv3ViTModel.layer. Transformers 5.x moved that surface; 4.57.x still
+    # matches the upstream TRELLIS.2 implementation.
+    .pip_install("transformers==4.57.6", "huggingface_hub>=0.34,<1.0")
     .env(
         {
             # OpenEXR support is required by trellis2.utils.render_utils, even
