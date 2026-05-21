@@ -205,7 +205,9 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runn
 writes `{output}/raw.glb`. `infra/modal_trellis.py` pins `microsoft/TRELLIS.2` with the
 `TRELLIS.2-4B` weights, CUDA 12.4, PyTorch 2.6.0, and an A100-80GB GPU by default. Adjust the
 constants at the top of the file to retarget GPU class, model, or timeout. Full walkthrough
-in [docs/modal-cloud-inference.md](docs/modal-cloud-inference.md).
+in [docs/modal-cloud-inference.md](docs/modal-cloud-inference.md); the operational
+step-by-step for the first live cloud run is in
+[docs/modal-live-smoke-test-plan.md](docs/modal-live-smoke-test-plan.md).
 
 ### Remote Runner API
 
