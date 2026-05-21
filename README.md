@@ -190,8 +190,9 @@ Run the GPU step on Modal's serverless GPUs while the MacBook keeps doing concep
 optimize, QA, review, and exports. The bridge script ships in this repo:
 
 ```bash
-python -m pip install modal
+python -m pip install 'modal>=0.64'
 modal token new
+modal secret create huggingface HF_TOKEN=hf_your_token_here   # optional, see docs
 modal deploy infra/modal_trellis.py
 
 export OPENAI_API_KEY="sk-your-development-key"
@@ -201,9 +202,10 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runn
 ```
 
 `scripts/modal_trellis_runner.py` validates inputs, calls the deployed Modal function, and
-writes `{output}/raw.glb`. `infra/modal_trellis.py` is a template — edit the TODO-marked image
-build and TRELLIS.2 entrypoint to match your upstream install. Full walkthrough in
-[docs/modal-cloud-inference.md](docs/modal-cloud-inference.md).
+writes `{output}/raw.glb`. `infra/modal_trellis.py` pins `microsoft/TRELLIS.2` with the
+`TRELLIS.2-4B` weights, CUDA 12.4, PyTorch 2.6.0, and an A100-80GB GPU by default. Adjust the
+constants at the top of the file to retarget GPU class, model, or timeout. Full walkthrough
+in [docs/modal-cloud-inference.md](docs/modal-cloud-inference.md).
 
 ### Remote Runner API
 

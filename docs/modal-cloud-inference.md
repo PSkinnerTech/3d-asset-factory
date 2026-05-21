@@ -28,8 +28,9 @@ The files added for this integration are:
 - `scripts/modal_trellis_runner.py` — controller-side bridge invoked by `TRELLIS2_COMMAND`.
   Production-quality: validates inputs, calls Modal, validates the GLB payload, writes
   `{output}/raw.glb`, exits non-zero on any failure.
-- `infra/modal_trellis.py` — the Modal app/function definition. **Template** with `TODO`
-  markers for TRELLIS.2 install specifics (image build, weights, entrypoint).
+- `infra/modal_trellis.py` — the Modal app/function definition. Pinned to
+  `microsoft/TRELLIS.2` (TRELLIS.2-4B weights on Hugging Face), CUDA 12.4, PyTorch 2.6.0,
+  A100-80GB GPU by default. Edit the constants at the top of the file to retarget.
 - `tests/test_modal_trellis_runner.py` — unit tests for the bridge that mock the Modal call.
 
 ## When to choose Modal
@@ -55,16 +56,18 @@ On the MacBook:
 Cloud side:
 
 - A Modal account at <https://modal.com>.
-- The `modal` CLI installed locally and authenticated.
-- Access to a GPU class with at least 24 GB VRAM (A10G is the typical minimum for TRELLIS.2;
-  A100 / H100 is faster).
+- The `modal` CLI installed locally and authenticated (SDK version `>=0.64`, which is what
+  `Function.from_name` requires).
+- Access to a GPU class with at least 24 GB VRAM. The TRELLIS.2 README lists A100 / H100 as
+  the verified configurations; `infra/modal_trellis.py` defaults to `A100-80GB`. A10G works
+  for the 512–1024 voxel range at a lower per-second cost; bump to `H100` for the 1536³ path.
 
 ## One-time setup
 
 ### 1. Install the Modal CLI and authenticate
 
 ```bash
-python -m pip install modal
+python -m pip install 'modal>=0.64'
 modal token new
 ```
 
@@ -75,38 +78,54 @@ modal token new
 modal profile current
 ```
 
-### 2. Create the Hugging Face secret (optional)
+### 2. Create the Hugging Face secret
 
-If the TRELLIS.2 checkpoints you target live behind a gated Hugging Face repo, create a Modal
-secret so the GPU function can pull them. Otherwise you can remove the `secrets=[...]` line
-from `infra/modal_trellis.py`.
+`microsoft/TRELLIS.2-4B` is currently a public Hugging Face repo and an unauthenticated
+download works, but `infra/modal_trellis.py` still attaches a Modal secret called
+`huggingface` so the function survives the repo being gated in the future and so you can
+pre-warm the cache from your account's allowance. Create it with:
 
 ```bash
 modal secret create huggingface HF_TOKEN=hf_your_token_here
 ```
 
-### 3. Edit the TODOs in `infra/modal_trellis.py`
+If you would rather not create the secret, edit `infra/modal_trellis.py` and remove the
+`secrets=[modal.Secret.from_name("huggingface")]` block from the `@app.function(...)`
+decorator before deploying.
 
-The controller-side runner is fully wired up, but the Modal app is a template because the
-exact TRELLIS.2 install command and entrypoint change across upstream commits and forks. Open
-`infra/modal_trellis.py` and replace every `TODO`-marked value:
+### 3. Pre-create the weights volume (optional)
 
-- `GPU` — the smallest GPU class with enough VRAM.
-- `BASE_IMAGE`, `PYTHON_VERSION` — CUDA + Python versions matching the TRELLIS.2 upstream.
-- `TRELLIS_REPO_URL`, `TRELLIS_INSTALL_DIR` — the TRELLIS.2 source you target.
-- The `pip_install(...)` dependency list — the full pinned dep set.
-- The `run_commands(...)` install step — the upstream's actual install command.
-- The body of `trellis_generate` — replace the placeholder `from trellis2.inference import
-  image_to_glb` block with the real entrypoint that produces `out_path` from `in_path`.
+The function defines a Modal volume called `trellis2-weights` and mounts it at `/weights`.
+Hugging Face caches land in `/weights/hf-cache` so subsequent cold starts skip the ~16 GB
+download. Modal creates the volume on first deploy via `create_if_missing=True`, but you can
+pre-create it explicitly:
 
-The function must return raw GLB bytes. The runner asserts the bytes start with the `glTF`
-magic header before writing them to disk.
+```bash
+modal volume create trellis2-weights
+```
 
 ### 4. Deploy the Modal app
 
 ```bash
 modal deploy infra/modal_trellis.py
 ```
+
+The first deploy compiles the CUDA extensions (`flash-attn`, `nvdiffrast`, `nvdiffrec`,
+`CuMesh`, `FlexGEMM`, `o_voxel`) from source. Expect the build to take roughly 15–25 minutes;
+Modal caches the resulting image so subsequent deploys are fast unless the image definition
+changes.
+
+### 5. Retarget GPU / model if needed
+
+Open `infra/modal_trellis.py` and adjust the constants near the top if your workload differs
+from the default:
+
+- `GPU` (default `"A100-80GB"`) — set to `"A10G"` to cut cost for 512³–1024³ outputs, or
+  `"H100"` for the fastest 1536³ runs.
+- `TRELLIS_MODEL_ID` (default `"microsoft/TRELLIS.2-4B"`) — point at a fine-tuned variant if
+  you have one published on Hugging Face with the same `Trellis2ImageTo3DPipeline` layout.
+- `FUNCTION_TIMEOUT_SECONDS` (default `1200`) — raise this if you target very high
+  resolutions or expect long cold starts.
 
 You can sanity-check the GPU function in isolation with the bundled local entrypoint:
 
@@ -116,8 +135,9 @@ modal run infra/modal_trellis.py::smoke --image-path /tmp/concept.png \
 ```
 
 If `smoke` produces a valid GLB at `/tmp/raw.glb`, the GPU side is fine and any remaining
-failures are on the controller. If `smoke` fails, fix the TRELLIS.2 entrypoint before wiring
-into the asset factory.
+failures are on the controller. If `smoke` fails, inspect `modal app logs trellis2-inference`
+— the most common first-deploy failure is a CUDA extension that did not compile against the
+PyTorch wheel in the image (re-run the deploy after fixing the version mismatch).
 
 ## Wire it into `TRELLIS2_COMMAND`
 
@@ -192,8 +212,12 @@ stdout, stderr, return code, and timing.
 - `modal_trellis_runner: Modal function payload missing glTF magic header` — the function
   returned data, but it is not a valid GLB. Likely the upstream TRELLIS.2 entrypoint produced
   a different file format, or returned the wrong file. Use `modal run ... ::smoke` to inspect.
-- Modal cold starts can be 30–90 s the first time per day. Keep a warm pool with `min_containers`
-  on the function decorator if you need predictable latency.
+- Cold starts have two components: container snapshot restore (typically 5–15 s) and the
+  first-time Hugging Face download of TRELLIS.2-4B into the `trellis2-weights` volume
+  (~16 GB, runs once and is cached for every subsequent worker). Keep a warm pool with
+  `min_containers=1` on the `@app.function(...)` decorator if you need predictable latency.
+- Inference time per the upstream README on an H100: ~3 s at 512³, ~17 s at 1024³, ~60 s at
+  1536³. A100-80GB is ~30 % slower; A10G is meaningfully slower at the high end.
 
 ## Local testing without Modal
 
