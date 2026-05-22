@@ -131,7 +131,10 @@ def test_export_updates_existing_export_manifests(tmp_path: Path):
 def test_export_command_can_create_stl_only_package(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
 
-    export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity", "--format", "stl"])
+    export_result = runner.invoke(
+        app,
+        ["export", str(run_dir), "--profile", "unity", "--format", "stl"],
+    )
 
     assert export_result.exit_code == 0, export_result.output
     root_manifest = read_json(run_dir / "manifest.json")
