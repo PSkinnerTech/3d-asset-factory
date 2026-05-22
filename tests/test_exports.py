@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
 import trimesh
-from asset_factory.exports import export_profiles
+
+from asset_factory.exports import export_profiles, import_notes
 from asset_factory.models import ExportFormat, ExportProfile
 
 
@@ -81,3 +83,41 @@ def test_exports_glb_and_stl_package(tmp_path: Path):
         assert profile.value in notes
         assert "asset.glb" in notes
         assert "asset.stl" in notes
+
+
+def test_exports_rejects_explicit_empty_formats(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "demo" / "20260520T120000Z"
+    write_artifacts(run_dir)
+
+    with pytest.raises(ValueError, match="at least one export format"):
+        export_profiles(run_dir, [ExportProfile.WEB], formats=[])
+
+
+def test_import_notes_rejects_explicit_empty_formats():
+    with pytest.raises(ValueError, match="at least one export format"):
+        import_notes(ExportProfile.WEB, formats=[])
+
+
+def test_exports_remove_stale_format_artifacts(tmp_path: Path):
+    run_dir = tmp_path / "runs" / "demo" / "20260520T120000Z"
+    write_mesh_artifacts(run_dir)
+
+    export_profiles(
+        run_dir,
+        [ExportProfile.WEB],
+        formats=[ExportFormat.GLB, ExportFormat.STL],
+    )
+    export_dir = run_dir / "exports" / ExportProfile.WEB.value
+    assert (export_dir / "asset.glb").exists()
+    assert (export_dir / "asset.stl").exists()
+    assert (export_dir / "stl_report.json").exists()
+
+    export_profiles(run_dir, [ExportProfile.WEB], formats=[ExportFormat.STL])
+    assert not (export_dir / "asset.glb").exists()
+    assert (export_dir / "asset.stl").exists()
+    assert (export_dir / "stl_report.json").exists()
+
+    export_profiles(run_dir, [ExportProfile.WEB], formats=[ExportFormat.GLB])
+    assert (export_dir / "asset.glb").exists()
+    assert not (export_dir / "asset.stl").exists()
+    assert not (export_dir / "stl_report.json").exists()

@@ -6,7 +6,6 @@ from pathlib import Path
 from asset_factory.models import ExportFormat, ExportProfile
 from asset_factory.stl import export_stl
 
-
 COMMON_EXPORT_FILES = (
     ("previews/thumbnail.png", "thumbnail.png"),
     ("previews/turntable.webm", "turntable.webm"),
@@ -20,7 +19,7 @@ def export_profiles(
     *,
     formats: list[ExportFormat] | None = None,
 ) -> dict[ExportProfile, Path]:
-    selected_formats = formats or [ExportFormat.GLB]
+    selected_formats = _select_formats(formats)
     results: dict[ExportProfile, Path] = {}
     for profile in profiles:
         export_dir = run_dir / "exports" / profile.value
@@ -61,7 +60,7 @@ def _write_format_artifacts(
 
 
 def import_notes(profile: ExportProfile, formats: list[ExportFormat] | None = None) -> str:
-    selected_formats = formats or [ExportFormat.GLB]
+    selected_formats = _select_formats(formats)
     lines = [f"# {profile.value} import notes", ""]
     if ExportFormat.GLB in selected_formats:
         lines.append(
@@ -79,3 +78,11 @@ def import_notes(profile: ExportProfile, formats: list[ExportFormat] | None = No
         "remain visible to build tooling."
     )
     return "\n\n".join(lines) + "\n"
+
+
+def _select_formats(formats: list[ExportFormat] | None) -> list[ExportFormat]:
+    if formats is None:
+        return [ExportFormat.GLB]
+    if not formats:
+        raise ValueError("export package must request at least one export format")
+    return formats
