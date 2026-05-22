@@ -83,6 +83,7 @@ grade_band: "6-8"
 style: conceptual
 learning_goal: Identify the outer membrane, stroma, thylakoids, and grana.
 exports: ["web", "unity", "unreal"]
+export_formats: ["glb", "stl"]
 qa:
   max_triangles: 150000
   max_glb_mb: 25
@@ -251,6 +252,22 @@ python -m asset_factory qa runs/chloroplast_001/<timestamp>
 python -m asset_factory export runs/chloroplast_001/<timestamp> --profile web
 python -m asset_factory review runs/chloroplast_001/<timestamp>
 ```
+
+### Export Formats
+
+`exports` chooses destination packages (`web`, `unity`, `unreal`). `export_formats`
+chooses asset file formats inside each package.
+
+```bash
+asset-factory export runs/chloroplast_001/<timestamp> --profile web --format glb
+asset-factory export runs/chloroplast_001/<timestamp> --profile web --format stl
+asset-factory export runs/chloroplast_001/<timestamp> --profile web --format glb --format stl
+```
+
+GLB is the canonical textured runtime asset for apps and engines. STL is a
+geometry-only CAD/3D-printing derivative and does not preserve TRELLIS textures,
+materials, vertex colors, PBR values, or opacity. Review `stl_report.json`
+before printing.
 
 ## Docs
 
