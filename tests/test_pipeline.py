@@ -4,7 +4,14 @@ import pytest
 from PIL import Image
 
 from asset_factory.manifest import read_manifest
-from asset_factory.models import AssetSpec, ExportProfile, QaThresholds, ScienceSubject, StyleMode
+from asset_factory.models import (
+    AssetSpec,
+    ExportFormat,
+    ExportProfile,
+    QaThresholds,
+    ScienceSubject,
+    StyleMode,
+)
 from asset_factory.pipeline import generate_asset
 from asset_factory.runners.base import RunnerRequest, RunnerResult
 from asset_factory.runners.mock import MockRunner
@@ -46,6 +53,7 @@ def make_spec() -> AssetSpec:
         style=StyleMode.CONCEPTUAL,
         learning_goal="Identify the wheel, axle, rope, and load.",
         exports=[ExportProfile.WEB, ExportProfile.UNITY],
+        export_formats=[ExportFormat.GLB, ExportFormat.STL],
         qa=QaThresholds(max_triangles=150000, max_glb_mb=25),
     )
 
@@ -68,7 +76,11 @@ def test_generate_asset_creates_complete_run(tmp_path: Path):
     assert (run_dir / "previews" / "turntable.webm").exists()
     assert (run_dir / "reports" / "review.html").exists()
     assert (run_dir / "exports" / "web" / "asset.glb").exists()
+    assert (run_dir / "exports" / "web" / "asset.stl").exists()
+    assert (run_dir / "exports" / "web" / "stl_report.json").exists()
     assert (run_dir / "exports" / "unity" / "asset.glb").exists()
+    assert (run_dir / "exports" / "unity" / "asset.stl").exists()
+    assert (run_dir / "exports" / "unity" / "stl_report.json").exists()
     assert read_manifest(run_dir / "manifest.json") == result.manifest
     assert result.manifest.qa.passed is True
     assert result.manifest.provenance.openai_model == "fake-image-model"
@@ -85,6 +97,8 @@ def test_generate_asset_creates_complete_run(tmp_path: Path):
         assert exported_manifest.provenance.openai_model == "fake-image-model"
         assert exported_manifest.provenance.runner_type == "mock"
         assert exported_manifest.files.optimized_glb == "asset.glb"
+        assert exported_manifest.files.stl == "asset.stl"
+        assert exported_manifest.files.stl_report == "stl_report.json"
         assert exported_manifest.files.thumbnail == "thumbnail.png"
         assert exported_manifest.files.turntable == "turntable.webm"
         assert exported_manifest.files.qa_report == "qa.json"
@@ -92,6 +106,23 @@ def test_generate_asset_creates_complete_run(tmp_path: Path):
         assert exported_manifest.files.concept_image is None
         assert exported_manifest.files.review_html is None
         assert exported_manifest.files.exports == {profile: "."}
+
+
+def test_generate_asset_glb_only_package_manifest_omits_stl(tmp_path: Path):
+    spec = make_spec().model_copy(update={"export_formats": [ExportFormat.GLB]})
+
+    result = generate_asset(
+        spec=spec,
+        root_dir=tmp_path,
+        image_generator=FakeImageGenerator(),
+        runner=MockRunner(),
+        timestamp="20260520T120000Z",
+    )
+
+    web_manifest = read_manifest(result.run_dir / "exports" / "web" / "manifest.json")
+    assert web_manifest.files.optimized_glb == "asset.glb"
+    assert web_manifest.files.stl is None
+    assert web_manifest.files.stl_report is None
 
 
 def test_generate_asset_skips_exports_when_qa_fails(tmp_path: Path):

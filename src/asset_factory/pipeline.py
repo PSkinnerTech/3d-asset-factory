@@ -13,7 +13,7 @@ from asset_factory.manifest import (
     write_manifest,
     write_package_manifest,
 )
-from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaSummary
+from asset_factory.models import AssetManifest, AssetSpec, ExportFormat, ExportProfile, QaSummary
 from asset_factory.optimize import OptimizedAsset, optimize_asset
 from asset_factory.prompts import build_image_prompt
 from asset_factory.qa import run_qa
@@ -106,7 +106,11 @@ def generate_asset(
     )
     write_manifest(layout.manifest_path, manifest)
 
-    exports = export_profiles(layout.run_dir, spec.exports) if qa_summary.passed else {}
+    exports = (
+        export_profiles(layout.run_dir, spec.exports, formats=spec.export_formats)
+        if qa_summary.passed
+        else {}
+    )
 
     manifest = _apply_outputs(
         manifest=manifest,
@@ -119,7 +123,7 @@ def generate_asset(
         exports=exports,
     )
     write_manifest(layout.manifest_path, manifest)
-    _write_export_manifests(exports, manifest)
+    _write_export_manifests(exports, manifest, spec.export_formats)
     return PipelineResult(run_dir=layout.run_dir, layout=layout, manifest=manifest)
 
 
@@ -155,6 +159,7 @@ def _apply_outputs(
 def _write_export_manifests(
     exports: dict[ExportProfile, Path],
     manifest: AssetManifest,
+    formats: list[ExportFormat],
 ) -> None:
     for profile, export_dir in exports.items():
-        write_package_manifest(export_dir / "manifest.json", manifest, profile)
+        write_package_manifest(export_dir / "manifest.json", manifest, profile, formats)

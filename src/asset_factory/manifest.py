@@ -9,6 +9,7 @@ from asset_factory.models import (
     AssetManifest,
     AssetSpec,
     EducationMetadata,
+    ExportFormat,
     ExportProfile,
     FileManifest,
     Provenance,
@@ -53,11 +54,22 @@ def write_manifest(path: Path, manifest: AssetManifest) -> None:
     )
 
 
-def package_local_manifest(manifest: AssetManifest, profile: ExportProfile) -> AssetManifest:
+def package_local_manifest(
+    manifest: AssetManifest,
+    profile: ExportProfile,
+    formats: list[ExportFormat] | None = None,
+) -> AssetManifest:
+    selected_formats = _select_formats(formats)
     package_manifest = manifest.model_copy(deep=True)
     package_manifest.files.concept_image = None
     package_manifest.files.raw_glb = None
-    package_manifest.files.optimized_glb = "asset.glb"
+    package_manifest.files.optimized_glb = (
+        "asset.glb" if ExportFormat.GLB in selected_formats else None
+    )
+    package_manifest.files.stl = "asset.stl" if ExportFormat.STL in selected_formats else None
+    package_manifest.files.stl_report = (
+        "stl_report.json" if ExportFormat.STL in selected_formats else None
+    )
     package_manifest.files.thumbnail = "thumbnail.png"
     package_manifest.files.turntable = "turntable.webm"
     package_manifest.files.qa_report = "qa.json"
@@ -66,8 +78,13 @@ def package_local_manifest(manifest: AssetManifest, profile: ExportProfile) -> A
     return package_manifest
 
 
-def write_package_manifest(path: Path, manifest: AssetManifest, profile: ExportProfile) -> None:
-    write_manifest(path, package_local_manifest(manifest, profile))
+def write_package_manifest(
+    path: Path,
+    manifest: AssetManifest,
+    profile: ExportProfile,
+    formats: list[ExportFormat] | None = None,
+) -> None:
+    write_manifest(path, package_local_manifest(manifest, profile, formats))
 
 
 def read_manifest(path: Path) -> AssetManifest:
@@ -120,6 +137,16 @@ def apply_pipeline_outputs(
     manifest.files.turntable = str(turntable)
     manifest.files.qa_report = str(qa_report)
     manifest.files.review_html = str(review_html) if review_html else None
+    manifest.files.stl = None
+    manifest.files.stl_report = None
     manifest.files.exports = {profile: str(path) for profile, path in exports.items()}
     manifest.qa = qa_summary
     return manifest
+
+
+def _select_formats(formats: list[ExportFormat] | None) -> list[ExportFormat]:
+    if formats is None:
+        return [ExportFormat.GLB]
+    if not formats:
+        raise ValueError("export package must request at least one export format")
+    return formats
