@@ -98,6 +98,28 @@ def test_import_notes_rejects_explicit_empty_formats():
         import_notes(ExportProfile.WEB, formats=[])
 
 
+def test_import_notes_use_profile_specific_glb_guidance():
+    web_notes = import_notes(ExportProfile.WEB, [ExportFormat.GLB])
+    unity_notes = import_notes(ExportProfile.UNITY, [ExportFormat.GLB])
+    unreal_notes = import_notes(ExportProfile.UNREAL, [ExportFormat.GLB])
+
+    assert "Three.js" in web_notes
+    assert "React Three Fiber" in web_notes
+    assert "Babylon.js" in web_notes
+    assert "Unity GLTF importer" in unity_notes
+    assert "Unreal" in unreal_notes
+    assert "glTF importer" in unreal_notes
+    assert "plugin" in unreal_notes
+
+
+def test_import_notes_keep_stl_guidance_when_selected():
+    notes = import_notes(ExportProfile.UNITY, [ExportFormat.GLB, ExportFormat.STL])
+
+    assert "Unity GLTF importer" in notes
+    assert "geometry-only" in notes
+    assert "Review stl_report.json" in notes
+
+
 def test_exports_remove_stale_format_artifacts(tmp_path: Path):
     run_dir = tmp_path / "runs" / "demo" / "20260520T120000Z"
     write_mesh_artifacts(run_dir)

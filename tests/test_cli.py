@@ -174,6 +174,27 @@ def test_export_command_can_create_glb_and_stl_package(tmp_path: Path):
     assert_package_local_manifest(unity_manifest, "unity", has_glb=True, has_stl=True)
 
 
+def test_failed_stl_export_preserves_existing_advertised_package(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+    export_dir = run_dir / "exports" / "web"
+    original_glb = (export_dir / "asset.glb").read_bytes()
+    original_root_manifest = read_json(run_dir / "manifest.json")
+
+    (run_dir / "optimize" / "asset.glb").write_bytes(b"not a valid glb")
+
+    export_result = runner.invoke(
+        app,
+        ["export", str(run_dir), "--profile", "web", "--format", "stl"],
+    )
+
+    assert export_result.exit_code != 0
+    assert (export_dir / "asset.glb").read_bytes() == original_glb
+    assert read_json(run_dir / "manifest.json") == original_root_manifest
+    assert_package_local_manifest(read_json(export_dir / "manifest.json"), "web")
+    assert not (export_dir / "asset.stl").exists()
+    assert not (export_dir / "stl_report.json").exists()
+
+
 def test_export_does_not_advertise_incomplete_profile_dirs(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
     partial_export_dir = run_dir / "exports" / "unreal"
