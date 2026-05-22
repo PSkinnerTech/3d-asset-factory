@@ -234,3 +234,62 @@ def test_replace_export_package_restores_existing_files_when_stale_removal_fails
         assert (export_dir / name).read_bytes() == contents
     assert not (export_dir / "asset.stl").exists()
     assert not (export_dir / "stl_report.json").exists()
+
+
+def test_replace_export_package_continues_rollback_after_restore_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    export_dir = tmp_path / "exports" / "web"
+    export_dir.mkdir(parents=True)
+    existing_files = {
+        "asset.glb": b"old glb",
+        "thumbnail.png": b"old png",
+        "turntable.webm": b"old webm",
+        "qa.json": b'{"old": true}',
+        "IMPORT_NOTES.md": b"old notes",
+    }
+    for name, contents in existing_files.items():
+        (export_dir / name).write_bytes(contents)
+
+    staging_dir = tmp_path / "staging"
+    staging_dir.mkdir()
+    staged_files = {
+        "asset.stl": b"new stl",
+        "stl_report.json": b'{"new": true}',
+        "thumbnail.png": b"new png",
+        "turntable.webm": b"new webm",
+        "qa.json": b'{"new": true}',
+        "IMPORT_NOTES.md": b"new notes",
+    }
+    for name, contents in staged_files.items():
+        (staging_dir / name).write_bytes(contents)
+
+    original_replace = Path.replace
+    original_unlink = Path.unlink
+
+    def fail_thumbnail_restore(self: Path, target: Path):
+        if self.name == "thumbnail.png" and Path(target) == export_dir / "thumbnail.png":
+            raise OSError("simulated thumbnail restore failure")
+        return original_replace(self, target)
+
+    def fail_removing_stale_glb(self: Path, *args, **kwargs):
+        if self == export_dir / "asset.glb":
+            raise OSError("simulated stale removal failure")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "replace", fail_thumbnail_restore)
+    monkeypatch.setattr(Path, "unlink", fail_removing_stale_glb)
+
+    with pytest.raises(OSError, match="simulated stale removal failure") as exc_info:
+        _replace_export_package(staging_dir, export_dir, [ExportFormat.STL])
+
+    notes = getattr(exc_info.value, "__notes__", [])
+    assert any("simulated thumbnail restore failure" in note for note in notes)
+    assert (export_dir / "asset.glb").read_bytes() == existing_files["asset.glb"]
+    assert (export_dir / "turntable.webm").read_bytes() == existing_files["turntable.webm"]
+    assert (export_dir / "qa.json").read_bytes() == existing_files["qa.json"]
+    assert (export_dir / "IMPORT_NOTES.md").read_bytes() == existing_files["IMPORT_NOTES.md"]
+    assert (export_dir / "thumbnail.png").read_bytes() == staged_files["thumbnail.png"]
+    assert not (export_dir / "asset.stl").exists()
+    assert not (export_dir / "stl_report.json").exists()

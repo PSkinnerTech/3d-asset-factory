@@ -103,6 +103,7 @@ def _replace_export_package(
             shutil.copy2(file_path, backup_path)
             backups[file_path] = backup_path
 
+        rollback_ran = False
         try:
             replacements: list[tuple[Path, Path]] = []
             for final_path, staged_path in final_files.items():
@@ -116,12 +117,19 @@ def _replace_export_package(
 
             for stale_file in stale_files:
                 stale_file.unlink(missing_ok=True)
-        except Exception:
-            _rollback_export_package(managed_files, backups, temporary_files)
+        except Exception as error:
+            rollback_ran = True
+            rollback_failures = _rollback_export_package(managed_files, backups, temporary_files)
+            for rollback_failure in rollback_failures:
+                error.add_note(rollback_failure)
             raise
         finally:
             for temporary_file in temporary_files:
-                temporary_file.unlink(missing_ok=True)
+                try:
+                    temporary_file.unlink(missing_ok=True)
+                except OSError:
+                    if not rollback_ran:
+                        raise
 
 
 def _temporary_export_path(final_path: Path) -> Path:
@@ -137,16 +145,26 @@ def _rollback_export_package(
     managed_files: set[Path],
     backups: dict[Path, Path],
     temporary_files: list[Path],
-) -> None:
+) -> list[str]:
+    rollback_failures: list[str] = []
+
     for temporary_file in temporary_files:
-        temporary_file.unlink(missing_ok=True)
+        try:
+            temporary_file.unlink(missing_ok=True)
+        except OSError as error:
+            rollback_failures.append(f"Failed to remove temporary export {temporary_file}: {error}")
 
     for managed_file in managed_files:
         backup_path = backups.get(managed_file)
-        if backup_path is not None:
-            backup_path.replace(managed_file)
-        else:
-            managed_file.unlink(missing_ok=True)
+        try:
+            if backup_path is not None:
+                backup_path.replace(managed_file)
+            else:
+                managed_file.unlink(missing_ok=True)
+        except OSError as error:
+            rollback_failures.append(f"Failed to roll back export {managed_file}: {error}")
+
+    return rollback_failures
 
 
 def import_notes(profile: ExportProfile, formats: list[ExportFormat] | None = None) -> str:
