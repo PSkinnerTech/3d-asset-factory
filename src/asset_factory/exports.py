@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,6 +13,10 @@ COMMON_EXPORT_FILES = (
     ("previews/turntable.webm", "turntable.webm"),
     ("reports/qa.json", "qa.json"),
 )
+FORMAT_EXPORT_FILES = {
+    ExportFormat.GLB: ("asset.glb",),
+    ExportFormat.STL: ("asset.stl", "stl_report.json"),
+}
 
 
 def export_profiles(
@@ -70,15 +75,78 @@ def _replace_export_package(
     formats: list[ExportFormat],
 ) -> None:
     export_dir.mkdir(parents=True, exist_ok=True)
-    for package_file in staging_dir.iterdir():
-        if package_file.is_file():
-            shutil.copy2(package_file, export_dir / package_file.name)
 
-    if ExportFormat.GLB not in formats:
-        (export_dir / "asset.glb").unlink(missing_ok=True)
-    if ExportFormat.STL not in formats:
-        (export_dir / "asset.stl").unlink(missing_ok=True)
-        (export_dir / "stl_report.json").unlink(missing_ok=True)
+    staged_files = sorted(
+        (package_file for package_file in staging_dir.iterdir() if package_file.is_file()),
+        key=lambda package_file: package_file.name,
+    )
+    final_files = {export_dir / package_file.name: package_file for package_file in staged_files}
+    stale_files = [
+        export_dir / file_name
+        for export_format, file_names in FORMAT_EXPORT_FILES.items()
+        if export_format not in formats
+        for file_name in file_names
+        if export_dir / file_name not in final_files
+    ]
+    managed_files = set(final_files) | set(stale_files)
+    existing_managed_files = [file_path for file_path in managed_files if file_path.exists()]
+
+    with tempfile.TemporaryDirectory(
+        dir=export_dir.parent,
+        prefix=f".{export_dir.name}-backup-",
+    ) as backup_root:
+        backup_dir = Path(backup_root)
+        backups: dict[Path, Path] = {}
+        temporary_files: list[Path] = []
+        for file_path in existing_managed_files:
+            backup_path = backup_dir / file_path.name
+            shutil.copy2(file_path, backup_path)
+            backups[file_path] = backup_path
+
+        try:
+            replacements: list[tuple[Path, Path]] = []
+            for final_path, staged_path in final_files.items():
+                temporary_path = _temporary_export_path(final_path)
+                temporary_files.append(temporary_path)
+                shutil.copy2(staged_path, temporary_path)
+                replacements.append((temporary_path, final_path))
+
+            for temporary_path, final_path in replacements:
+                temporary_path.replace(final_path)
+
+            for stale_file in stale_files:
+                stale_file.unlink(missing_ok=True)
+        except Exception:
+            _rollback_export_package(managed_files, backups, temporary_files)
+            raise
+        finally:
+            for temporary_file in temporary_files:
+                temporary_file.unlink(missing_ok=True)
+
+
+def _temporary_export_path(final_path: Path) -> Path:
+    fd, temporary_name = tempfile.mkstemp(
+        dir=final_path.parent,
+        prefix=f".{final_path.name}.tmp-",
+    )
+    os.close(fd)
+    return Path(temporary_name)
+
+
+def _rollback_export_package(
+    managed_files: set[Path],
+    backups: dict[Path, Path],
+    temporary_files: list[Path],
+) -> None:
+    for temporary_file in temporary_files:
+        temporary_file.unlink(missing_ok=True)
+
+    for managed_file in managed_files:
+        backup_path = backups.get(managed_file)
+        if backup_path is not None:
+            backup_path.replace(managed_file)
+        else:
+            managed_file.unlink(missing_ok=True)
 
 
 def import_notes(profile: ExportProfile, formats: list[ExportFormat] | None = None) -> str:

@@ -193,6 +193,7 @@ def test_failed_stl_export_preserves_existing_advertised_package(tmp_path: Path)
     assert_package_local_manifest(read_json(export_dir / "manifest.json"), "web")
     assert not (export_dir / "asset.stl").exists()
     assert not (export_dir / "stl_report.json").exists()
+    assert not list((run_dir / "exports").glob(".web-staging-*"))
 
 
 def test_export_does_not_advertise_incomplete_profile_dirs(tmp_path: Path):
