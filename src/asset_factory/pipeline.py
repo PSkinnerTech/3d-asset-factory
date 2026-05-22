@@ -74,6 +74,7 @@ def generate_asset(
         generated_image.image_path,
         layout.optimize_dir,
         layout.previews_dir,
+        max_triangles=spec.qa.max_triangles,
     )
     qa_summary = run_qa(spec, optimized.optimized_glb)
     qa_report = layout.reports_dir / "qa.json"

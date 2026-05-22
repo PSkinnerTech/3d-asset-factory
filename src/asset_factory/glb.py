@@ -150,10 +150,25 @@ def _has_valid_base_color_texture(
         return False
 
     images = glb_json.get("images")
-    source_index = texture.get("source")
+    source_index = _texture_source_index(texture)
     return _is_valid_index(source_index, images) and _has_usable_image_data(
         images[source_index], glb_json, glb_parent
     )
+
+
+def _texture_source_index(texture: dict[str, Any]) -> Any:
+    if "source" in texture:
+        return texture.get("source")
+
+    extensions = texture.get("extensions")
+    if not isinstance(extensions, dict):
+        return None
+
+    webp = extensions.get("EXT_texture_webp")
+    if isinstance(webp, dict) and "source" in webp:
+        return webp.get("source")
+
+    return None
 
 
 def _has_explicit_base_color(material: Any, glb_json: dict[str, Any], glb_parent: Path) -> bool:

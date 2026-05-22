@@ -14,7 +14,8 @@ dependencies = [
   "imageio-ffmpeg>=0.5.1",
   "trimesh>=4.4.9",
   "pygltflib>=1.16.2",
-  "numpy>=2.0.1"
+  "numpy>=2.0.1",
+  "fast-simplification>=0.1.13",
 ]
 
 [project.optional-dependencies]
