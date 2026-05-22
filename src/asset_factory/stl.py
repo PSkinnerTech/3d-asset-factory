@@ -7,7 +7,6 @@ import trimesh
 from pydantic import BaseModel, ConfigDict
 from trimesh import Trimesh
 
-
 GEOMETRY_ONLY_WARNING = (
     "STL is geometry-only; materials, colors, and textures are not preserved."
 )
