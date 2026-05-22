@@ -44,8 +44,16 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def assert_package_local_manifest(manifest: dict, profile: str) -> None:
-    assert manifest["files"]["optimized_glb"] == "asset.glb"
+def assert_package_local_manifest(
+    manifest: dict,
+    profile: str,
+    *,
+    has_glb: bool = True,
+    has_stl: bool = False,
+) -> None:
+    assert manifest["files"]["optimized_glb"] == ("asset.glb" if has_glb else None)
+    assert manifest["files"]["stl"] == ("asset.stl" if has_stl else None)
+    assert manifest["files"]["stl_report"] == ("stl_report.json" if has_stl else None)
     assert manifest["files"]["thumbnail"] == "thumbnail.png"
     assert manifest["files"]["turntable"] == "turntable.webm"
     assert manifest["files"]["qa_report"] == "qa.json"
@@ -120,10 +128,54 @@ def test_export_updates_existing_export_manifests(tmp_path: Path):
     assert_package_local_manifest(unity_manifest, "unity")
 
 
+def test_export_command_can_create_stl_only_package(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+
+    export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity", "--format", "stl"])
+
+    assert export_result.exit_code == 0, export_result.output
+    root_manifest = read_json(run_dir / "manifest.json")
+    unity_manifest = read_json(run_dir / "exports" / "unity" / "manifest.json")
+    assert root_manifest["files"]["exports"] == {
+        "web": str(run_dir / "exports" / "web"),
+        "unity": str(run_dir / "exports" / "unity"),
+    }
+    assert not (run_dir / "exports" / "unity" / "asset.glb").exists()
+    assert (run_dir / "exports" / "unity" / "asset.stl").exists()
+    assert (run_dir / "exports" / "unity" / "stl_report.json").exists()
+    assert_package_local_manifest(unity_manifest, "unity", has_glb=False, has_stl=True)
+
+
+def test_export_command_can_create_glb_and_stl_package(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+
+    export_result = runner.invoke(
+        app,
+        [
+            "export",
+            str(run_dir),
+            "--profile",
+            "unity",
+            "--format",
+            "glb",
+            "--format",
+            "stl",
+        ],
+    )
+
+    assert export_result.exit_code == 0, export_result.output
+    unity_manifest = read_json(run_dir / "exports" / "unity" / "manifest.json")
+    assert (run_dir / "exports" / "unity" / "asset.glb").exists()
+    assert (run_dir / "exports" / "unity" / "asset.stl").exists()
+    assert (run_dir / "exports" / "unity" / "stl_report.json").exists()
+    assert_package_local_manifest(unity_manifest, "unity", has_glb=True, has_stl=True)
+
+
 def test_export_does_not_advertise_incomplete_profile_dirs(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
     partial_export_dir = run_dir / "exports" / "unreal"
     partial_export_dir.mkdir()
+    (partial_export_dir / "asset.stl").write_bytes(b"solid stale")
 
     export_result = runner.invoke(app, ["export", str(run_dir), "--profile", "unity"])
 

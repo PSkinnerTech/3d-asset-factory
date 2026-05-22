@@ -13,7 +13,13 @@ from PIL import Image, ImageDraw
 from asset_factory.exports import export_profiles
 from asset_factory.images import OpenAIImageGenerator
 from asset_factory.manifest import read_manifest, write_manifest, write_package_manifest
-from asset_factory.models import AssetManifest, AssetSpec, ExportProfile, QaThresholds
+from asset_factory.models import (
+    AssetManifest,
+    AssetSpec,
+    ExportFormat,
+    ExportProfile,
+    QaThresholds,
+)
 from asset_factory.pipeline import generate_asset
 from asset_factory.qa import run_qa
 from asset_factory.runners.mock import MockRunner
@@ -21,14 +27,13 @@ from asset_factory.specs import load_asset_spec
 
 app = typer.Typer(help="Generate educational 3D asset bundles from science specs.")
 
-_REQUIRED_EXPORT_PACKAGE_FILES = (
-    "asset.glb",
+_COMMON_EXPORT_PACKAGE_FILES = (
     "thumbnail.png",
     "turntable.webm",
     "qa.json",
-    "manifest.json",
     "IMPORT_NOTES.md",
 )
+_PACKAGE_MANIFEST_FILE = "manifest.json"
 
 
 @dataclass(frozen=True)
@@ -138,7 +143,14 @@ def qa(run_dir: Path) -> None:
 
 
 @app.command()
-def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
+def export(
+    run_dir: Path,
+    profile: ExportProfile = ExportProfile.WEB,
+    formats: Annotated[
+        list[ExportFormat] | None,
+        typer.Option("--format", help="Export file format. Repeat for multiple formats."),
+    ] = None,
+) -> None:
     """Rebuild an export profile from an existing run directory."""
     manifest_path = run_dir / "manifest.json"
     manifest = read_manifest(manifest_path)
@@ -148,6 +160,7 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
             param_hint="run_dir",
         )
 
+    selected_formats = [ExportFormat.GLB] if formats is None else formats
     complete_export_dirs = _export_package_dirs(
         run_dir,
         extra_dirs=[
@@ -155,7 +168,7 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
             *_complete_export_package_dirs(run_dir),
         ],
     )
-    outputs = export_profiles(run_dir, [profile])
+    outputs = export_profiles(run_dir, [profile], formats=selected_formats)
     export_dirs = _export_package_dirs(
         run_dir,
         extra_dirs=[*complete_export_dirs, *outputs.values()],
@@ -173,7 +186,8 @@ def export(run_dir: Path, profile: ExportProfile = ExportProfile.WEB) -> None:
     )
 
     for export_profile, output_dir in outputs.items():
-        typer.echo(f"Exported {export_profile.value}: {output_dir}")
+        format_label = ", ".join(export_format.value for export_format in selected_formats)
+        typer.echo(f"Exported {export_profile.value} ({format_label}): {output_dir}")
 
 
 @app.command()
@@ -202,6 +216,7 @@ def _spec_from_manifest(run_dir: Path, manifest_path: Path) -> AssetSpec:
         style=manifest.education.style,
         learning_goal=manifest.education.learning_goal,
         exports=list(manifest.files.exports) or [ExportProfile.WEB],
+        export_formats=[ExportFormat.GLB],
         qa=QaThresholds(max_triangles=150000, max_glb_mb=25),
     )
 
@@ -241,6 +256,15 @@ def _complete_export_package_dirs(run_dir: Path) -> list[Path]:
     return [export_dir for export_dir in export_dirs if _is_complete_export_package(export_dir)]
 
 
+def _formats_from_package_dir(export_dir: Path) -> list[ExportFormat]:
+    formats: list[ExportFormat] = []
+    if (export_dir / "asset.glb").is_file():
+        formats.append(ExportFormat.GLB)
+    if (export_dir / "asset.stl").is_file() and (export_dir / "stl_report.json").is_file():
+        formats.append(ExportFormat.STL)
+    return formats
+
+
 def _exports_from_package_dirs(
     export_dirs: Iterable[Path],
     *,
@@ -261,18 +285,17 @@ def _exports_from_package_dirs(
 
 
 def _is_complete_export_package(export_dir: Path) -> bool:
-    return all(
-        (export_dir / required_file).is_file()
-        for required_file in _REQUIRED_EXPORT_PACKAGE_FILES
-    )
+    return _has_export_package_payload(export_dir) and (
+        export_dir / _PACKAGE_MANIFEST_FILE
+    ).is_file()
 
 
 def _has_export_package_payload(export_dir: Path) -> bool:
-    return all(
+    has_common_files = all(
         (export_dir / required_file).is_file()
-        for required_file in _REQUIRED_EXPORT_PACKAGE_FILES
-        if required_file != "manifest.json"
+        for required_file in _COMMON_EXPORT_PACKAGE_FILES
     )
+    return has_common_files and bool(_formats_from_package_dir(export_dir))
 
 
 def _is_export_package_dir(path: Path, exports_root: Path) -> bool:
@@ -305,7 +328,15 @@ def _sync_export_packages(
             continue
 
         profile = ExportProfile(resolved_export_dir.name)
-        write_package_manifest(resolved_export_dir / "manifest.json", manifest, profile)
+        package_formats = _formats_from_package_dir(resolved_export_dir)
+        if not package_formats:
+            continue
+        write_package_manifest(
+            resolved_export_dir / "manifest.json",
+            manifest,
+            profile,
+            package_formats,
+        )
         if qa_report.exists():
             shutil.copy2(qa_report, resolved_export_dir / "qa.json")
 
