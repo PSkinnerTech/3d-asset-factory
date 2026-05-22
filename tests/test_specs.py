@@ -4,7 +4,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from asset_factory.models import ExportProfile, ScienceSubject, StyleMode
+from asset_factory.models import ExportFormat, ExportProfile, ScienceSubject, StyleMode
 from asset_factory.specs import load_asset_spec
 
 
@@ -18,6 +18,7 @@ def write_asset_spec(
     style: str = "conceptual",
     learning_goal: str = "Identify the outer membrane, stroma, thylakoids, and grana.",
     exports: str = '["web", "unity", "unreal"]',
+    extra_fields: str = "",
     max_triangles: int = 150000,
     max_glb_mb: int = 25,
 ) -> None:
@@ -30,6 +31,7 @@ grade_band: {grade_band!r}
 style: {style}
 learning_goal: {learning_goal!r}
 exports: {exports}
+{extra_fields}
 qa:
   max_triangles: {max_triangles}
   max_glb_mb: {max_glb_mb}
@@ -89,6 +91,40 @@ def test_rejects_empty_exports(tmp_path: Path):
     )
 
     with pytest.raises(ValidationError, match="at least one export"):
+        load_asset_spec(spec_path)
+
+
+def test_defaults_export_formats_to_glb(tmp_path: Path):
+    spec_path = tmp_path / "asset.yaml"
+    write_asset_spec(spec_path)
+
+    spec = load_asset_spec(spec_path)
+
+    assert spec.export_formats == [ExportFormat.GLB]
+
+
+def test_accepts_glb_and_stl_export_formats(tmp_path: Path):
+    spec_path = tmp_path / "asset.yaml"
+    write_asset_spec(spec_path, extra_fields='export_formats: ["glb", "stl"]')
+
+    spec = load_asset_spec(spec_path)
+
+    assert spec.export_formats == [ExportFormat.GLB, ExportFormat.STL]
+
+
+def test_rejects_empty_export_formats(tmp_path: Path):
+    spec_path = tmp_path / "asset.yaml"
+    write_asset_spec(spec_path, extra_fields="export_formats: []")
+
+    with pytest.raises(ValidationError, match="at least one export format"):
+        load_asset_spec(spec_path)
+
+
+def test_rejects_unknown_export_format(tmp_path: Path):
+    spec_path = tmp_path / "asset.yaml"
+    write_asset_spec(spec_path, extra_fields='export_formats: ["obj"]')
+
+    with pytest.raises(ValidationError):
         load_asset_spec(spec_path)
 
 

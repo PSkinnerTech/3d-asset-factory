@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from asset_factory.models import ExportProfile
+from asset_factory.models import ExportFormat, ExportProfile
 from asset_factory.specs import load_asset_spec
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,3 +21,4 @@ def test_all_seed_specs_validate():
         assert spec.id
         assert spec.learning_goal
         assert set(spec.exports) == EXPECTED_EXPORTS
+        assert spec.export_formats == [ExportFormat.GLB]

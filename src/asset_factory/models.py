@@ -26,6 +26,11 @@ class ExportProfile(StrEnum):
     UNREAL = "unreal"
 
 
+class ExportFormat(StrEnum):
+    GLB = "glb"
+    STL = "stl"
+
+
 class ReviewState(StrEnum):
     GENERATED = "generated"
     NEEDS_REVIEW = "needs_review"
@@ -52,6 +57,7 @@ class AssetSpec(BaseModel):
     style: StyleMode
     learning_goal: str = Field(min_length=1)
     exports: list[ExportProfile]
+    export_formats: list[ExportFormat] = Field(default_factory=lambda: [ExportFormat.GLB])
     qa: QaThresholds
     source_path: Path | None = None
 
@@ -60,6 +66,13 @@ class AssetSpec(BaseModel):
     def require_exports(cls, value: list[ExportProfile]) -> list[ExportProfile]:
         if not value:
             raise ValueError("asset spec must request at least one export")
+        return value
+
+    @field_validator("export_formats")
+    @classmethod
+    def require_export_formats(cls, value: list[ExportFormat]) -> list[ExportFormat]:
+        if not value:
+            raise ValueError("asset spec must request at least one export format")
         return value
 
 
@@ -100,6 +113,8 @@ class FileManifest(BaseModel):
     concept_image: str | None = None
     raw_glb: str | None = None
     optimized_glb: str | None = None
+    stl: str | None = None
+    stl_report: str | None = None
     thumbnail: str | None = None
     turntable: str | None = None
     qa_report: str | None = None
