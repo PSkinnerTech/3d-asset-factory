@@ -37,6 +37,8 @@ class OpenAIImageGenerator:
             model=self.model,
             prompt=prompt,
             size="1024x1024",
+            quality="high",
+            output_format="png",
         )
         data = getattr(response, "data", None)
         if not data:

@@ -20,7 +20,10 @@ def test_conceptual_prompt_prioritizes_readable_structure():
 
     assert "single isolated chloroplast" in prompt
     assert "conceptual educational 3D asset reference" in prompt
-    assert "simplified readable parts" in prompt
+    assert "high-fidelity" in prompt
+    assert "extremely detailed" in prompt
+    assert "readable, anatomically distinct parts" in prompt
+    assert "simplified" not in prompt
     assert "no labels" in prompt
     assert "plain neutral background" in prompt
 
@@ -30,6 +33,8 @@ def test_realistic_prompt_prioritizes_recognition():
 
     assert "single isolated chloroplast" in prompt
     assert "realistic educational 3D asset reference" in prompt
+    assert "high-fidelity" in prompt
+    assert "extremely detailed" in prompt
     assert "recognizable natural form" in prompt
     assert "no labels" in prompt
     assert "plain neutral background" in prompt

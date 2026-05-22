@@ -66,6 +66,9 @@ def test_generate_image_writes_prompt_and_png(tmp_path: Path):
     assert client.images.calls[0]["model"] == "gpt-image-2"
     assert client.images.calls[0]["prompt"] == "single isolated lever"
     assert client.images.calls[0]["size"] == "1024x1024"
+    assert client.images.calls[0]["quality"] == "high"
+    assert client.images.calls[0]["output_format"] == "png"
+    assert "response_format" not in client.images.calls[0]
 
 
 def test_generate_image_rejects_empty_data(tmp_path: Path):
