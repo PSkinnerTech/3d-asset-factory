@@ -49,6 +49,15 @@ def _resolve_export_dir(run_dir: Path, export_path: str | Path) -> Path:
         return path
     if path.parts[:1] == ("exports",):
         return run_dir / path
+
+    cwd_path = Path.cwd() / path
+    if cwd_path.exists():
+        return cwd_path
+
+    if "exports" in path.parts:
+        export_index = path.parts.index("exports")
+        return run_dir / Path(*path.parts[export_index:])
+
     return path
 
 
@@ -205,9 +214,6 @@ def build_review_html(
     escaped_concept_image = html.escape(concept_image, quote=True)
     escaped_glb_path = html.escape(glb_path, quote=True)
     escaped_thumbnail = html.escape(thumbnail, quote=True)
-    warning_items = "".join(f"<li>{html.escape(warning, quote=True)}</li>" for warning in warnings)
-    if not warning_items:
-        warning_items = "<li>No warnings reported.</li>"
     status_label = "Passed" if qa_passed else "Needs review"
     status_class = "passed" if qa_passed else "failed"
     glb_url = _script_json(f"../{glb_path}")
@@ -263,22 +269,6 @@ def build_review_html(
       width: 100%;
       border: 1px solid var(--line);
       background: white;
-    }}
-    ul {{ padding-left: 20px; color: var(--muted); }}
-    button {{
-      min-height: 36px;
-      margin: 0 8px 8px 0;
-      padding: 8px 12px;
-      border: 1px solid #a9b4c2;
-      border-radius: 6px;
-      background: #fff;
-      color: var(--ink);
-      font: inherit;
-    }}
-    button.primary {{
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
     }}
     .panel {{
       background: var(--paper);
@@ -375,16 +365,6 @@ def build_review_html(
       <section class="panel">
         <h2>Concept Image</h2>
         <img src="../{escaped_concept_image}" alt="Concept image for {escaped_asset_id}">
-      </section>
-      <section class="panel">
-        <h2>Warnings</h2>
-        <ul>{warning_items}</ul>
-      </section>
-      <section class="panel">
-        <h2>Review</h2>
-        <button class="primary" type="button">Approve</button>
-        <button type="button">Needs changes</button>
-        <button type="button">Reject</button>
       </section>
       {exports_panel}
     </aside>

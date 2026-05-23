@@ -272,7 +272,8 @@ def test_qa_failure_clears_advertised_exports(tmp_path: Path):
     assert root_manifest["files"]["exports"] == {}
     assert qa_report["passed"] is False
     assert "QA Needs review" in review_html
-    assert "Triangle count" in review_html
+    assert "No export packages were created for this run." in review_html
+    assert "<h2>Warnings</h2>" not in review_html
     assert not (run_dir / "exports" / "web").exists()
 
 

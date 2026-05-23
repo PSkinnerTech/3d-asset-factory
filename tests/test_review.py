@@ -17,7 +17,6 @@ def test_build_review_html_contains_manifest_and_viewer():
     assert "chloroplast_001" in html
     assert "image/concept.png" in html
     assert "optimize/asset.glb" in html
-    assert "Science correctness needs review" in html
     assert "GLTFLoader" in html
     assert '<script type="importmap">' in html
     assert '"three"' in html
@@ -101,6 +100,24 @@ def test_build_review_html_renders_export_empty_state():
     assert "No export packages were created for this run." in html
 
 
+def test_build_review_html_omits_inert_warning_and_review_panels():
+    html = build_review_html(
+        asset_id="chloroplast_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=["Science correctness needs review"],
+    )
+
+    assert "<h2>Warnings</h2>" not in html
+    assert "Science correctness needs review" not in html
+    assert "<h2>Review</h2>" not in html
+    assert "Approve" not in html
+    assert "Needs changes" not in html
+    assert "Reject" not in html
+
+
 def test_build_review_html_escapes_export_content():
     from asset_factory.review import ReviewExportLink
 
@@ -182,6 +199,33 @@ def test_collect_review_exports_includes_unavailable_current_profiles(tmp_path: 
     assert 'aria-label="STL unavailable for Unity"' in html
     assert 'aria-label="GLB unavailable for Unreal"' in html
     assert 'aria-label="STL unavailable for Unreal"' in html
+
+
+def test_collect_review_exports_resolves_project_relative_run_paths_with_absolute_run_dir(
+    tmp_path: Path,
+    monkeypatch,
+):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import ReviewExportLink, collect_review_exports
+
+    project_root = tmp_path / "project"
+    run_dir = project_root / "runs" / "pulley_001" / "20260520T120000Z"
+    export_dir = run_dir / "exports" / "web"
+    export_dir.mkdir(parents=True)
+    (export_dir / "asset.glb").write_bytes(b"glb")
+    project_relative_export = Path("runs/pulley_001/20260520T120000Z/exports/web")
+    monkeypatch.chdir(tmp_path)
+
+    exports = collect_review_exports(
+        run_dir.resolve(),
+        {ExportProfile.WEB: project_relative_export},
+    )
+
+    assert exports == [
+        ReviewExportLink(profile="Web", glb_path="exports/web/asset.glb"),
+        ReviewExportLink(profile="Unity"),
+        ReviewExportLink(profile="Unreal"),
+    ]
 
 
 def test_collect_review_exports_keeps_stl_link_when_report_is_unreadable(tmp_path: Path):
@@ -275,7 +319,7 @@ def test_build_review_html_escapes_visible_html_content():
     )
 
     assert "cell&lt;&amp;&gt;&quot;" in html
-    assert "Review &lt;b&gt;shape&lt;/b&gt; &amp; color" in html
+    assert "Review &lt;b&gt;shape&lt;/b&gt; &amp; color" not in html
     assert '<b>shape</b>' not in html
 
 
@@ -334,4 +378,6 @@ def test_write_review_html(tmp_path: Path):
 
     assert path == tmp_path / "reports" / "review.html"
     assert path.exists()
-    assert "Bad silhouette" in path.read_text(encoding="utf-8")
+    html = path.read_text(encoding="utf-8")
+    assert "Bad silhouette" not in html
+    assert "<h2>Warnings</h2>" not in html
