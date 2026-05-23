@@ -27,7 +27,7 @@ export packages.
   --output-path /tmp/raw.glb` writes a non-empty GLB whose first 4 bytes are
   `glTF`. This proves the Modal image, TRELLIS.2 imports, and function body.
 - Deployed-function smoke:
-  `python scripts/modal_trellis_runner.py <concept.png> <out_dir> 1024` writes
+  `.venv/bin/python scripts/modal_trellis_runner.py <concept.png> <out_dir> 1024` writes
   `out_dir/raw.glb` from the laptop with no Modal SDK errors. This proves the
   deployed app lookup path used by `TRELLIS2_COMMAND`.
 - `python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml
@@ -93,7 +93,7 @@ Two seams matter:
    pipeline's `TrellisCommandRunner` expands. This is the only interface
    between the laptop pipeline and any GPU host (local CUDA box, SSH, RunPod,
    Replicate, or Modal). Today this points at
-   `python scripts/modal_trellis_runner.py {image} {output} {resolution}`.
+   `.venv/bin/python scripts/modal_trellis_runner.py {image} {output} {resolution}`.
 2. **`raw.glb` contract** — the runner's only obligation is to put a valid GLB
    (file starts with `glTF`, non-empty, non-zero exit) at `{output}/raw.glb`.
    `TrellisCommandRunner` also writes `raw_report.json` (command, stdout,
@@ -280,7 +280,7 @@ environment selection, app name, or function name rather than TRELLIS.2 itself.
 # 9.1 — deployed-function smoke through the controller runner,
 # outside the asset-factory pipeline
 mkdir -p /tmp/runner_out
-python scripts/modal_trellis_runner.py \
+.venv/bin/python scripts/modal_trellis_runner.py \
   runs/chloroplast_001/<timestamp>/image/concept.png \
   /tmp/runner_out \
   1024
@@ -304,7 +304,7 @@ Then the full asset factory run:
 ```bash
 # 9.2 — wire it into the pipeline
 export OPENAI_API_KEY="sk-your-development-key"
-export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
+export TRELLIS2_COMMAND='.venv/bin/python scripts/modal_trellis_runner.py {image} {output} {resolution}'
 
 python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml \
   --runner trellis
@@ -533,7 +533,7 @@ The recommended inner loop while debugging:
 1. Edit infra/modal_trellis.py function body or constants.
 2. modal deploy infra/modal_trellis.py          # rebuilds only what changed
 3. modal run infra/modal_trellis.py::smoke ...  # GPU-only check
-4. python scripts/modal_trellis_runner.py ...   # controller-only check
+4. .venv/bin/python scripts/modal_trellis_runner.py ...   # controller-only check
 5. python -m asset_factory generate ...         # full pipeline check
 ```
 

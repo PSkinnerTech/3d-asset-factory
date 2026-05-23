@@ -145,12 +145,15 @@ On the MacBook before each run:
 
 ```bash
 export OPENAI_API_KEY="sk-your-development-key"
-export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
+export TRELLIS2_COMMAND='.venv/bin/python scripts/modal_trellis_runner.py {image} {output} {resolution}'
 ```
 
 The `TrellisCommandRunner` (see `src/asset_factory/runners/trellis.py`) expands `{image}`,
 `{output}`, and `{resolution}` from the pipeline state. The runner must produce
 `{output}/raw.glb`, exit 0 on success, and write a useful error to stderr otherwise.
+Use the Python executable from the environment where `modal` is installed; in this repo's local
+development setup that is usually `.venv/bin/python`, and using a bare `python` command can fail
+on systems that only expose `python3`.
 
 `scripts/modal_trellis_runner.py` also accepts overrides through environment variables, useful
 if you want to run more than one Modal app side by side:
@@ -164,7 +167,7 @@ export MODAL_TRELLIS_FUNCTION="trellis_generate"     # default
 
 ```bash
 export OPENAI_API_KEY="sk-your-development-key"
-export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
+export TRELLIS2_COMMAND='.venv/bin/python scripts/modal_trellis_runner.py {image} {output} {resolution}'
 
 python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runner trellis
 ```

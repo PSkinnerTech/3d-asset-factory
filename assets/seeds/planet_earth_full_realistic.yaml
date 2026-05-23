@@ -1,0 +1,12 @@
+id: planet_earth_full_001
+subject: astronomy
+object: "full planet Earth globe with visible continents, oceans, cloud systems, polar ice, atmospheric rim, and terrain detail"
+grade_band: "6-8"
+style: realistic
+learning_goal: "Identify major Earth systems visible from space: oceans, continents, atmosphere, cloud systems, polar ice, and large-scale landforms."
+exports: ["web", "unity", "unreal"]
+export_formats: ["glb", "stl"]
+qa:
+  max_triangles: 220000
+  max_glb_mb: 40
+  max_texture_px: 4096

@@ -15,7 +15,7 @@ can exercise the pure helpers without the dependency.
 
 Usage:
 
-    python scripts/modal_trellis_runner.py <image_path> <output_dir> [resolution]
+    .venv/bin/python scripts/modal_trellis_runner.py <image_path> <output_dir> [resolution]
 
 Environment variables:
 

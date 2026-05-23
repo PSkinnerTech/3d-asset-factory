@@ -197,7 +197,7 @@ modal secret create huggingface HF_TOKEN=hf_your_token_here   # optional, see do
 modal deploy infra/modal_trellis.py
 
 export OPENAI_API_KEY="sk-your-development-key"
-export TRELLIS2_COMMAND='python scripts/modal_trellis_runner.py {image} {output} {resolution}'
+export TRELLIS2_COMMAND='.venv/bin/python scripts/modal_trellis_runner.py {image} {output} {resolution}'
 
 python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runner trellis
 ```
@@ -205,9 +205,11 @@ python -m asset_factory generate assets/seeds/chloroplast_conceptual.yaml --runn
 `scripts/modal_trellis_runner.py` validates inputs, calls the deployed Modal function, and
 writes `{output}/raw.glb`. `infra/modal_trellis.py` pins `microsoft/TRELLIS.2` with the
 `TRELLIS.2-4B` weights, CUDA 12.4, PyTorch 2.6.0, and an A100-80GB GPU by default. Adjust the
-constants at the top of the file to retarget GPU class, model, or timeout. Full walkthrough
-in [docs/modal-cloud-inference.md](docs/modal-cloud-inference.md); the operational
-step-by-step for the first live cloud run is in
+constants at the top of the file to retarget GPU class, model, or timeout. Use the Python
+executable from your active environment in `TRELLIS2_COMMAND`; the repo-local `.venv/bin/python`
+path avoids failures on systems that do not provide a bare `python` command. Full walkthrough in
+[docs/modal-cloud-inference.md](docs/modal-cloud-inference.md); the operational step-by-step for
+the first live cloud run is in
 [docs/modal-live-smoke-test-plan.md](docs/modal-live-smoke-test-plan.md).
 
 ### Remote Runner API

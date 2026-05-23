@@ -15,10 +15,13 @@ EXPECTED_EXPORTS = {
 def test_all_seed_specs_validate():
     seed_paths = sorted(SEED_DIR.glob("*.yaml"))
 
-    assert len(seed_paths) == 10
+    assert len(seed_paths) == 11
     for path in seed_paths:
         spec = load_asset_spec(path)
         assert spec.id
         assert spec.learning_goal
         assert set(spec.exports) == EXPECTED_EXPORTS
-        assert spec.export_formats == [ExportFormat.GLB]
+        if "export_formats:" not in path.read_text(encoding="utf-8"):
+            assert spec.export_formats == [ExportFormat.GLB]
+        else:
+            assert spec.export_formats
