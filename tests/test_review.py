@@ -68,12 +68,21 @@ def test_build_review_html_marks_missing_export_formats_unavailable():
         thumbnail="previews/thumbnail.png",
         qa_passed=True,
         warnings=[],
-        exports=[ReviewExportLink(profile="Unity", glb_path=None, stl_path="exports/unity/asset.stl")],
+        exports=[
+            ReviewExportLink(
+                profile="Unity",
+                glb_path=None,
+                stl_path="exports/unity/asset.stl",
+            )
+        ],
     )
 
     assert "Unity" in html
     assert 'aria-label="GLB unavailable for Unity"' in html
-    assert '<span class="export-badge unavailable" aria-label="GLB unavailable for Unity">GLB</span>' in html
+    assert (
+        '<span class="export-badge unavailable" aria-label="GLB unavailable for Unity">'
+        "GLB</span>"
+    ) in html
     assert 'href="../exports/unity/asset.stl"' in html
 
 
