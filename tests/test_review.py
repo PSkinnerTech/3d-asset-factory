@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from asset_factory.review import build_review_html, serve_review, write_review_html
@@ -112,6 +113,67 @@ def test_build_review_html_escapes_export_content():
     assert "Web &lt;script&gt;" in html
     assert 'href="../exports/web/asset&quot; onclick=&quot;alert(1).glb"' in html
     assert 'href="../exports/web/asset" onclick="alert(1).glb"' not in html
+
+
+def test_collect_review_exports_finds_package_files_and_warning_counts(tmp_path: Path):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import ReviewExportLink, collect_review_exports
+
+    export_dir = tmp_path / "exports" / "web"
+    export_dir.mkdir(parents=True)
+    (export_dir / "asset.glb").write_bytes(b"glb")
+    (export_dir / "asset.stl").write_bytes(b"stl")
+    (export_dir / "stl_report.json").write_text(
+        json.dumps({"warnings": ["not watertight", "many bodies"]}),
+        encoding="utf-8",
+    )
+
+    exports = collect_review_exports(tmp_path, {ExportProfile.WEB: export_dir})
+
+    assert exports == [
+        ReviewExportLink(
+            profile="Web",
+            glb_path="exports/web/asset.glb",
+            stl_path="exports/web/asset.stl",
+            stl_report_path="exports/web/stl_report.json",
+            stl_warning_count=2,
+        )
+    ]
+
+
+def test_collect_review_exports_keeps_stl_link_when_report_is_unreadable(tmp_path: Path):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import ReviewExportLink, collect_review_exports
+
+    export_dir = tmp_path / "exports" / "unity"
+    export_dir.mkdir(parents=True)
+    (export_dir / "asset.stl").write_bytes(b"stl")
+    (export_dir / "stl_report.json").write_text("{not-json", encoding="utf-8")
+
+    exports = collect_review_exports(tmp_path, {ExportProfile.UNITY: export_dir})
+
+    assert exports == [
+        ReviewExportLink(
+            profile="Unity",
+            glb_path=None,
+            stl_path="exports/unity/asset.stl",
+            stl_report_path="exports/unity/stl_report.json",
+            stl_warning_count=1,
+        )
+    ]
+
+
+def test_collect_review_exports_does_not_link_outside_run_dir(tmp_path: Path):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import ReviewExportLink, collect_review_exports
+
+    outside_dir = tmp_path.parent / "outside-export"
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "asset.glb").write_bytes(b"glb")
+
+    exports = collect_review_exports(tmp_path, {ExportProfile.UNREAL: outside_dir})
+
+    assert exports == [ReviewExportLink(profile="Unreal")]
 
 
 def test_build_review_html_frames_loaded_model_in_preview():

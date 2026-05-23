@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import http.server
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -20,6 +20,68 @@ class ReviewExportLink:
     stl_path: str | None = None
     stl_report_path: str | None = None
     stl_warning_count: int = 0
+
+
+def _profile_value(profile: object) -> str:
+    value = getattr(profile, "value", profile)
+    return str(value)
+
+
+def _profile_label(profile: object) -> str:
+    return _profile_value(profile).replace("_", " ").title()
+
+
+def _resolve_export_dir(run_dir: Path, export_path: str | Path) -> Path:
+    path = Path(export_path)
+    if path.is_absolute():
+        return path
+    if path.parts[:1] == ("exports",):
+        return run_dir / path
+    return path
+
+
+def _relative_existing_file(run_dir: Path, path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        return path.resolve().relative_to(run_dir.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def _stl_warning_count(report_path: Path) -> int:
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 1
+    warnings = report.get("warnings") if isinstance(report, dict) else None
+    if not isinstance(warnings, list):
+        return 1
+    return len(warnings)
+
+
+def collect_review_exports(
+    run_dir: Path,
+    exports: Mapping[object, str | Path],
+) -> list[ReviewExportLink]:
+    collected: list[ReviewExportLink] = []
+    for profile, export_path in sorted(exports.items(), key=lambda item: _profile_value(item[0])):
+        export_dir = _resolve_export_dir(run_dir, export_path)
+        glb_path = _relative_existing_file(run_dir, export_dir / "asset.glb")
+        stl_path = _relative_existing_file(run_dir, export_dir / "asset.stl")
+        stl_report_path = _relative_existing_file(run_dir, export_dir / "stl_report.json")
+        collected.append(
+            ReviewExportLink(
+                profile=_profile_label(profile),
+                glb_path=glb_path,
+                stl_path=stl_path,
+                stl_report_path=stl_report_path,
+                stl_warning_count=_stl_warning_count(export_dir / "stl_report.json")
+                if stl_path
+                else 0,
+            )
+        )
+    return collected
 
 
 def _script_json(value: str) -> str:
