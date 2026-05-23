@@ -81,6 +81,12 @@ def test_generate_asset_creates_complete_run(tmp_path: Path):
     assert (run_dir / "exports" / "unity" / "asset.glb").exists()
     assert (run_dir / "exports" / "unity" / "asset.stl").exists()
     assert (run_dir / "exports" / "unity" / "stl_report.json").exists()
+    review_html = (run_dir / "reports" / "review.html").read_text(encoding="utf-8")
+    assert 'href="../exports/web/asset.glb"' in review_html
+    assert 'href="../exports/web/asset.stl"' in review_html
+    assert 'href="../exports/unity/asset.glb"' in review_html
+    assert 'href="../exports/unity/asset.stl"' in review_html
+    assert "STL exports are geometry-only and may need repair before 3D printing." in review_html
     assert read_manifest(run_dir / "manifest.json") == result.manifest
     assert result.manifest.qa.passed is True
     assert result.manifest.provenance.openai_model == "fake-image-model"

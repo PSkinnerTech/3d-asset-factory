@@ -149,6 +149,24 @@ def test_export_command_can_create_stl_only_package(tmp_path: Path):
     assert_package_local_manifest(unity_manifest, "unity", has_glb=False, has_stl=True)
 
 
+def test_export_command_refreshes_review_html_with_current_formats(tmp_path: Path):
+    runner, run_dir = generate_run(tmp_path)
+
+    export_result = runner.invoke(
+        app,
+        ["export", str(run_dir), "--profile", "unity", "--format", "stl"],
+    )
+
+    assert export_result.exit_code == 0, export_result.output
+    html = (run_dir / "reports" / "review.html").read_text(encoding="utf-8")
+    assert "Web" in html
+    assert 'href="../exports/web/asset.glb"' in html
+    assert 'aria-label="STL unavailable for Web"' in html
+    assert "Unity" in html
+    assert 'aria-label="GLB unavailable for Unity"' in html
+    assert 'href="../exports/unity/asset.stl"' in html
+
+
 def test_export_command_can_create_glb_and_stl_package(tmp_path: Path):
     runner, run_dir = generate_run(tmp_path)
 

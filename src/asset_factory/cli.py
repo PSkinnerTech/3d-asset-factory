@@ -177,13 +177,15 @@ def export(
         [*complete_export_dirs, *outputs.values()],
         require_manifest=False,
     )
-    write_manifest(manifest_path, manifest)
     _sync_export_packages(
         manifest,
         run_dir / "reports" / "qa.json",
         run_dir / "exports",
         export_dirs=export_dirs,
     )
+    review_html = _write_review_html(run_dir, manifest)
+    manifest.files.review_html = str(review_html)
+    write_manifest(manifest_path, manifest)
 
     for export_profile, output_dir in outputs.items():
         format_label = ", ".join(export_format.value for export_format in selected_formats)
@@ -353,7 +355,7 @@ def _remove_export_package_dirs(run_dir: Path, export_dirs: Iterable[Path]) -> N
 
 
 def _write_review_html(run_dir: Path, manifest: AssetManifest) -> Path:
-    from asset_factory.review import write_review_html
+    from asset_factory.review import collect_review_exports, write_review_html
 
     warnings = [*manifest.qa.blocking_failures, *manifest.qa.warnings]
     return write_review_html(
@@ -364,4 +366,5 @@ def _write_review_html(run_dir: Path, manifest: AssetManifest) -> Path:
         thumbnail="previews/thumbnail.png",
         qa_passed=manifest.qa.passed,
         warnings=warnings,
+        exports=collect_review_exports(run_dir, manifest.files.exports),
     )

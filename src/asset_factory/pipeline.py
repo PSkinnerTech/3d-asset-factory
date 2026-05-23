@@ -82,7 +82,13 @@ def generate_asset(
         json.dumps(qa_summary.model_dump(mode="json"), indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    from asset_factory.review import write_review_html
+    exports = (
+        export_profiles(layout.run_dir, spec.exports, formats=spec.export_formats)
+        if qa_summary.passed
+        else {}
+    )
+
+    from asset_factory.review import collect_review_exports, write_review_html
 
     review_html = write_review_html(
         layout.run_dir,
@@ -92,24 +98,7 @@ def generate_asset(
         thumbnail="previews/thumbnail.png",
         qa_passed=qa_summary.passed,
         warnings=qa_summary.warnings,
-    )
-
-    manifest = _apply_outputs(
-        manifest=manifest,
-        generated_image=generated_image,
-        runner_result=runner_result,
-        optimized=optimized,
-        qa_report=qa_report,
-        review_html=review_html,
-        qa_summary=qa_summary,
-        exports={},
-    )
-    write_manifest(layout.manifest_path, manifest)
-
-    exports = (
-        export_profiles(layout.run_dir, spec.exports, formats=spec.export_formats)
-        if qa_summary.passed
-        else {}
+        exports=collect_review_exports(layout.run_dir, exports),
     )
 
     manifest = _apply_outputs(
