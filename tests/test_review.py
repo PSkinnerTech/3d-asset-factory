@@ -146,8 +146,42 @@ def test_collect_review_exports_finds_package_files_and_warning_counts(tmp_path:
             stl_path="exports/web/asset.stl",
             stl_report_path="exports/web/stl_report.json",
             stl_warning_count=2,
-        )
+        ),
+        ReviewExportLink(profile="Unity"),
+        ReviewExportLink(profile="Unreal"),
     ]
+
+
+def test_collect_review_exports_includes_unavailable_current_profiles(tmp_path: Path):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import ReviewExportLink, build_review_html, collect_review_exports
+
+    export_dir = tmp_path / "exports" / "web"
+    export_dir.mkdir(parents=True)
+    (export_dir / "asset.glb").write_bytes(b"glb")
+
+    exports = collect_review_exports(tmp_path, {ExportProfile.WEB: export_dir})
+
+    assert exports == [
+        ReviewExportLink(profile="Web", glb_path="exports/web/asset.glb"),
+        ReviewExportLink(profile="Unity"),
+        ReviewExportLink(profile="Unreal"),
+    ]
+
+    html = build_review_html(
+        asset_id="pulley_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=[],
+        exports=exports,
+    )
+
+    assert 'aria-label="GLB unavailable for Unity"' in html
+    assert 'aria-label="STL unavailable for Unity"' in html
+    assert 'aria-label="GLB unavailable for Unreal"' in html
+    assert 'aria-label="STL unavailable for Unreal"' in html
 
 
 def test_collect_review_exports_keeps_stl_link_when_report_is_unreadable(tmp_path: Path):
@@ -162,13 +196,15 @@ def test_collect_review_exports_keeps_stl_link_when_report_is_unreadable(tmp_pat
     exports = collect_review_exports(tmp_path, {ExportProfile.UNITY: export_dir})
 
     assert exports == [
+        ReviewExportLink(profile="Web"),
         ReviewExportLink(
             profile="Unity",
             glb_path=None,
             stl_path="exports/unity/asset.stl",
             stl_report_path="exports/unity/stl_report.json",
             stl_warning_count=1,
-        )
+        ),
+        ReviewExportLink(profile="Unreal"),
     ]
 
 
@@ -182,7 +218,11 @@ def test_collect_review_exports_does_not_link_outside_run_dir(tmp_path: Path):
 
     exports = collect_review_exports(tmp_path, {ExportProfile.UNREAL: outside_dir})
 
-    assert exports == [ReviewExportLink(profile="Unreal")]
+    assert exports == [
+        ReviewExportLink(profile="Web"),
+        ReviewExportLink(profile="Unity"),
+        ReviewExportLink(profile="Unreal"),
+    ]
 
 
 def test_collect_review_exports_uses_product_profile_order(tmp_path: Path):

@@ -76,11 +76,25 @@ def collect_review_exports(
     run_dir: Path,
     exports: Mapping[object, str | Path],
 ) -> list[ReviewExportLink]:
+    if not exports:
+        return []
+
+    exports_by_profile = {
+        _profile_value(profile): export_path for profile, export_path in exports.items()
+    }
+    unknown_profiles = sorted(
+        (profile for profile in exports_by_profile if profile not in _PROFILE_ORDER),
+        key=_profile_sort_key,
+    )
+    ordered_profiles = [*_PROFILE_ORDER, *unknown_profiles]
+
     collected: list[ReviewExportLink] = []
-    for profile, export_path in sorted(
-        exports.items(),
-        key=lambda item: _profile_sort_key(item[0]),
-    ):
+    for profile in ordered_profiles:
+        export_path = exports_by_profile.get(profile)
+        if export_path is None:
+            collected.append(ReviewExportLink(profile=_profile_label(profile)))
+            continue
+
         export_dir = _resolve_export_dir(run_dir, export_path)
         glb_path = _relative_existing_file(run_dir, export_dir / "asset.glb")
         stl_path = _relative_existing_file(run_dir, export_dir / "asset.stl")
