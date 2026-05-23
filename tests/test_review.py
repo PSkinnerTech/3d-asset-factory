@@ -185,6 +185,22 @@ def test_collect_review_exports_does_not_link_outside_run_dir(tmp_path: Path):
     assert exports == [ReviewExportLink(profile="Unreal")]
 
 
+def test_collect_review_exports_uses_product_profile_order(tmp_path: Path):
+    from asset_factory.models import ExportProfile
+    from asset_factory.review import collect_review_exports
+
+    export_dirs = {
+        profile: tmp_path / "exports" / profile.value
+        for profile in (ExportProfile.UNREAL, ExportProfile.WEB, ExportProfile.UNITY)
+    }
+    for export_dir in export_dirs.values():
+        export_dir.mkdir(parents=True)
+
+    exports = collect_review_exports(tmp_path, export_dirs)
+
+    assert [export.profile for export in exports] == ["Web", "Unity", "Unreal"]
+
+
 def test_build_review_html_frames_loaded_model_in_preview():
     html = build_review_html(
         asset_id="chloroplast_001",

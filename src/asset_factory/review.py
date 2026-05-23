@@ -22,9 +22,21 @@ class ReviewExportLink:
     stl_warning_count: int = 0
 
 
+_PROFILE_ORDER = {
+    "web": 0,
+    "unity": 1,
+    "unreal": 2,
+}
+
+
 def _profile_value(profile: object) -> str:
     value = getattr(profile, "value", profile)
     return str(value)
+
+
+def _profile_sort_key(profile: object) -> tuple[int, str]:
+    value = _profile_value(profile)
+    return (_PROFILE_ORDER.get(value, len(_PROFILE_ORDER)), value)
 
 
 def _profile_label(profile: object) -> str:
@@ -65,7 +77,10 @@ def collect_review_exports(
     exports: Mapping[object, str | Path],
 ) -> list[ReviewExportLink]:
     collected: list[ReviewExportLink] = []
-    for profile, export_path in sorted(exports.items(), key=lambda item: _profile_value(item[0])):
+    for profile, export_path in sorted(
+        exports.items(),
+        key=lambda item: _profile_sort_key(item[0]),
+    ):
         export_dir = _resolve_export_dir(run_dir, export_path)
         glb_path = _relative_existing_file(run_dir, export_dir / "asset.glb")
         stl_path = _relative_existing_file(run_dir, export_dir / "asset.stl")
