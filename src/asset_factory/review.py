@@ -3,12 +3,23 @@ from __future__ import annotations
 import html
 import http.server
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
 
 class ReviewHTTPServer(http.server.ThreadingHTTPServer):
     allow_reuse_address = True
+
+
+@dataclass(frozen=True)
+class ReviewExportLink:
+    profile: str
+    glb_path: str | None = None
+    stl_path: str | None = None
+    stl_report_path: str | None = None
+    stl_warning_count: int = 0
 
 
 def _script_json(value: str) -> str:
@@ -20,6 +31,75 @@ def _script_json(value: str) -> str:
     )
 
 
+def _href(path: str) -> str:
+    return html.escape(f"../{path}", quote=True)
+
+
+def _export_badge(profile: str, label: str, path: str | None) -> str:
+    escaped_label = html.escape(label, quote=True)
+    escaped_profile = html.escape(profile, quote=True)
+    if path is None:
+        return (
+            f'<span class="export-badge unavailable" '
+            f'aria-label="{escaped_label} unavailable for {escaped_profile}">{escaped_label}</span>'
+        )
+    return f'<a class="export-badge" href="{_href(path)}" download>{escaped_label}</a>'
+
+
+def _stl_warning_badge(count: int) -> str:
+    if count <= 0:
+        return ""
+    label = "warning" if count == 1 else "warnings"
+    return f'<span class="export-warning">{count} STL {label}</span>'
+
+
+def _render_exports_panel(exports: Sequence[ReviewExportLink]) -> str:
+    if not exports:
+        return (
+            '<section class="panel export-panel">\n'
+            "        <h2>Exports</h2>\n"
+            '        <p class="muted">No export packages were created for this run.</p>\n'
+            "      </section>"
+        )
+
+    rows = []
+    show_stl_note = False
+    for export in exports:
+        escaped_profile = html.escape(export.profile, quote=True)
+        glb_badge = _export_badge(export.profile, "GLB", export.glb_path)
+        stl_badge = _export_badge(export.profile, "STL", export.stl_path)
+        report_link = ""
+        if export.stl_report_path is not None:
+            report_link = (
+                f'<a class="export-badge" href="{_href(export.stl_report_path)}" '
+                "download>STL report</a>"
+            )
+        warning_badge = _stl_warning_badge(export.stl_warning_count)
+        show_stl_note = show_stl_note or export.stl_path is not None
+        rows.append(
+            '<div class="export-row">'
+            f"<strong>{escaped_profile}</strong>"
+            f'<div class="export-actions">{glb_badge}{stl_badge}{report_link}{warning_badge}</div>'
+            "</div>"
+        )
+
+    note = ""
+    if show_stl_note:
+        note = (
+            '<p class="export-note">'
+            "STL exports are geometry-only and may need repair before 3D printing."
+            "</p>"
+        )
+
+    return (
+        '<section class="panel export-panel">\n'
+        "        <h2>Exports</h2>\n"
+        f"        {''.join(rows)}\n"
+        f"        {note}\n"
+        "      </section>"
+    )
+
+
 def build_review_html(
     *,
     asset_id: str,
@@ -27,7 +107,8 @@ def build_review_html(
     glb_path: str,
     thumbnail: str,
     qa_passed: bool,
-    warnings: list[str],
+    warnings: Sequence[str],
+    exports: Sequence[ReviewExportLink] = (),
 ) -> str:
     escaped_asset_id = html.escape(asset_id, quote=True)
     escaped_concept_image = html.escape(concept_image, quote=True)
@@ -39,6 +120,7 @@ def build_review_html(
     status_label = "Passed" if qa_passed else "Needs review"
     status_class = "passed" if qa_passed else "failed"
     glb_url = _script_json(f"../{glb_path}")
+    exports_panel = _render_exports_panel(exports)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -78,6 +160,7 @@ def build_review_html(
     h1, h2, p {{ margin-top: 0; }}
     h1 {{ margin-bottom: 0; font-size: 1.35rem; }}
     h2 {{ font-size: 0.95rem; }}
+    .muted {{ color: var(--muted); }}
     main {{
       display: grid;
       grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
@@ -121,6 +204,47 @@ def build_review_html(
     }}
     .status.passed {{ background: #dff7ea; color: var(--passed); }}
     .status.failed {{ background: #fde8e4; color: var(--failed); }}
+    .export-panel {{ display: grid; gap: 12px; }}
+    .export-row {{
+      display: grid;
+      gap: 8px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }}
+    .export-row:first-of-type {{ padding-top: 0; border-top: 0; }}
+    .export-actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }}
+    .export-badge {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 9px;
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+    .export-badge.unavailable {{
+      border-color: var(--line);
+      color: var(--muted);
+      background: var(--canvas);
+    }}
+    .export-warning {{
+      color: var(--failed);
+      font-size: 0.82rem;
+      font-weight: 700;
+    }}
+    .export-note {{
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }}
     #viewer {{
       position: relative;
       min-height: 560px;
@@ -171,6 +295,7 @@ def build_review_html(
         <button type="button">Needs changes</button>
         <button type="button">Reject</button>
       </section>
+      {exports_panel}
     </aside>
     <section class="panel">
       <h2>3D Preview</h2>
@@ -272,7 +397,8 @@ def write_review_html(
     glb_path: str,
     thumbnail: str,
     qa_passed: bool,
-    warnings: list[str],
+    warnings: Sequence[str],
+    exports: Sequence[ReviewExportLink] = (),
 ) -> Path:
     reports_dir = run_dir / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -285,6 +411,7 @@ def write_review_html(
             thumbnail=thumbnail,
             qa_passed=qa_passed,
             warnings=warnings,
+            exports=exports,
         ),
         encoding="utf-8",
     )

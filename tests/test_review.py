@@ -25,6 +25,95 @@ def test_build_review_html_contains_manifest_and_viewer():
     assert "import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';" in html
 
 
+def test_build_review_html_renders_export_links():
+    from asset_factory.review import ReviewExportLink
+
+    html = build_review_html(
+        asset_id="chloroplast_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=[],
+        exports=[
+            ReviewExportLink(
+                profile="Web",
+                glb_path="exports/web/asset.glb",
+                stl_path="exports/web/asset.stl",
+                stl_report_path="exports/web/stl_report.json",
+                stl_warning_count=2,
+            )
+        ],
+    )
+
+    assert "<h2>Exports</h2>" in html
+    assert "Web" in html
+    assert 'href="../exports/web/asset.glb"' in html
+    assert 'href="../exports/web/asset.stl"' in html
+    assert 'download>GLB</a>' in html
+    assert 'download>STL</a>' in html
+    assert 'href="../exports/web/stl_report.json"' in html
+    assert "2 STL warnings" in html
+    assert "STL exports are geometry-only and may need repair before 3D printing." in html
+
+
+def test_build_review_html_marks_missing_export_formats_unavailable():
+    from asset_factory.review import ReviewExportLink
+
+    html = build_review_html(
+        asset_id="pulley_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=[],
+        exports=[ReviewExportLink(profile="Unity", glb_path=None, stl_path="exports/unity/asset.stl")],
+    )
+
+    assert "Unity" in html
+    assert 'aria-label="GLB unavailable for Unity"' in html
+    assert '<span class="export-badge unavailable" aria-label="GLB unavailable for Unity">GLB</span>' in html
+    assert 'href="../exports/unity/asset.stl"' in html
+
+
+def test_build_review_html_renders_export_empty_state():
+    html = build_review_html(
+        asset_id="failed_001",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=False,
+        warnings=["QA failed"],
+        exports=[],
+    )
+
+    assert "<h2>Exports</h2>" in html
+    assert "No export packages were created for this run." in html
+
+
+def test_build_review_html_escapes_export_content():
+    from asset_factory.review import ReviewExportLink
+
+    html = build_review_html(
+        asset_id="demo",
+        concept_image="image/concept.png",
+        glb_path="optimize/asset.glb",
+        thumbnail="previews/thumbnail.png",
+        qa_passed=True,
+        warnings=[],
+        exports=[
+            ReviewExportLink(
+                profile='Web <script>',
+                glb_path='exports/web/asset" onclick="alert(1).glb',
+            )
+        ],
+    )
+
+    assert "Web &lt;script&gt;" in html
+    assert 'href="../exports/web/asset&quot; onclick=&quot;alert(1).glb"' in html
+    assert 'href="../exports/web/asset" onclick="alert(1).glb"' not in html
+
+
 def test_build_review_html_frames_loaded_model_in_preview():
     html = build_review_html(
         asset_id="chloroplast_001",
